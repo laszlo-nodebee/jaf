@@ -69,6 +69,7 @@ class MethodLoggingTransformer implements ClassFileTransformer {
                         if (target == null) {
                             return mv;
                         }
+			System.out.println(String.format("MethodLoggingTransformer, visiting method name: %s, descriptor: %s", name, descriptor));
 
                         return new MethodVisitor(Opcodes.ASM9, mv) {
                             @Override
@@ -99,12 +100,31 @@ class MethodLoggingTransformer implements ClassFileTransformer {
                 Opcodes.GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
         mv.visitTypeInsn(Opcodes.NEW, "java/lang/StringBuilder");
         mv.visitInsn(Opcodes.DUP);
-        mv.visitLdcInsn("Instrumented call " + config.displayName + " args:");
+        mv.visitLdcInsn("Instrumented call " + config.displayName + " requestId=");
         mv.visitMethodInsn(
                 Opcodes.INVOKESPECIAL,
                 "java/lang/StringBuilder",
                 "<init>",
                 "(Ljava/lang/String;)V",
+                false);
+        mv.visitMethodInsn(
+                Opcodes.INVOKESTATIC,
+                "com/jaf/agent/FuzzingRequestContext",
+                "currentRequestId",
+                "()Ljava/lang/String;",
+                false);
+        mv.visitMethodInsn(
+                Opcodes.INVOKEVIRTUAL,
+                "java/lang/StringBuilder",
+                "append",
+                "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+                false);
+        mv.visitLdcInsn(" args:");
+        mv.visitMethodInsn(
+                Opcodes.INVOKEVIRTUAL,
+                "java/lang/StringBuilder",
+                "append",
+                "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
                 false);
 
         Type[] argTypes = Type.getArgumentTypes(config.descriptor);

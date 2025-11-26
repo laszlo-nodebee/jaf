@@ -1,15 +1,24 @@
 package com.jaf.agent;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.instrument.Instrumentation;
-import java.util.ArrayList;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.util.jar.JarOutputStream;
+import java.nio.file.StandardOpenOption;
 import org.objectweb.asm.Opcodes;
 
 public class JafAgent {
     public static void premain(String agentArgs, Instrumentation inst) {
         logStartup(agentArgs);
+        appendAgentJarToBootstrap(inst);
         startCoverageServer();
         waitForFuzzerConnection();
         installTransformer(inst);
@@ -27,8 +36,12 @@ public class JafAgent {
     }
 
     private static CoverageServer coverageServer;
+    private static volatile boolean bootstrapHelpersInstalled = false;
+    private static volatile JarFile bootstrapHelperJar;
+    private static Path bootstrapHelperJarPath;
 
     private static void installTransformer(Instrumentation inst) {
+        appendAgentJarToBootstrap(inst);
         String[] targets = {
             "java/lang/Runtime#exec([Ljava/lang/String;[Ljava/lang/String;Ljava/io/File;)Ljava/lang/Process;|command,env,dir",
             "java/io/ObjectInputStream#readObject()Ljava/lang/Object;",
@@ -88,16 +101,19 @@ public class JafAgent {
             "java/util/jar/JarInputStream#getNextJarEntry()Ljava/util/jar/JarEntry;",
             "java/net/URLClassLoader#<init>([Ljava/net/URL;)V|urls",
             "java/net/URLClassLoader#addURL(Ljava/net/URL;)V|url",
-            "java/lang/invoke/MethodHandles$Lookup#defineClass([B)Ljava/lang/Class;"
+            //"java/lang/invoke/MethodHandles$Lookup#defineClass([B)Ljava/lang/Class;",
         };
         MethodLoggingTransformer loggingTransformer = new MethodLoggingTransformer(targets);
+        ServletRequestIdTransformer requestIdTransformer = new ServletRequestIdTransformer();
         EdgeCoverageTransformer coverageTransformer =
                 new EdgeCoverageTransformer(loggingTransformer.targetClasses());
         try {
             inst.addTransformer(coverageTransformer, true);
+            inst.addTransformer(requestIdTransformer, true);
             inst.addTransformer(loggingTransformer, true);
             if (inst.isRetransformClassesSupported()) {
-                Set<String> targetNames = loggingTransformer.targetClasses();
+                Set<String> targetNames = new HashSet<>(loggingTransformer.targetClasses());
+                targetNames.addAll(requestIdTransformer.targetClasses());
                 List<Class<?>> toRetransform = new ArrayList<>();
                 for (Class<?> loaded : inst.getAllLoadedClasses()) {
                     String internalName = loaded.getName().replace('.', '/');
@@ -148,6 +164,81 @@ public class JafAgent {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             System.err.println("Interrupted while waiting for fuzzer connection.");
+        }
+    }
+
+    private static void appendAgentJarToBootstrap(Instrumentation inst) {
+        if (bootstrapHelpersInstalled || inst == null) {
+            return;
+        }
+        synchronized (JafAgent.class) {
+            if (bootstrapHelpersInstalled) {
+                return;
+            }
+            try {
+                byte[] classBytes = readClassBytes("com/jaf/agent/FuzzingRequestContext.class");
+                if (classBytes == null) {
+                    System.err.println("Failed to load FuzzingRequestContext class bytes.");
+                    return;
+                }
+                Path tempJar =
+                        Files.createTempFile("jaf-agent-bootstrap-", ".jar").toAbsolutePath();
+                try (JarOutputStream jos =
+                        new JarOutputStream(
+                                Files.newOutputStream(
+                                        tempJar,
+                                        StandardOpenOption.CREATE,
+                                        StandardOpenOption.TRUNCATE_EXISTING,
+                                        StandardOpenOption.WRITE))) {
+                    JarEntry entry = new JarEntry("com/jaf/agent/FuzzingRequestContext.class");
+                    jos.putNextEntry(entry);
+                    jos.write(classBytes);
+                    jos.closeEntry();
+                }
+                JarFile jarFile = new JarFile(tempJar.toFile());
+                inst.appendToBootstrapClassLoaderSearch(jarFile);
+                bootstrapHelperJar = jarFile;
+                bootstrapHelperJarPath = tempJar;
+                bootstrapHelpersInstalled = true;
+                Runtime.getRuntime()
+                        .addShutdownHook(
+                                new Thread(
+                                        () -> {
+                                            try {
+                                                if (bootstrapHelperJar != null) {
+                                                    bootstrapHelperJar.close();
+                                                }
+                                            } catch (IOException ignored) {
+                                            }
+                                            try {
+                                                if (bootstrapHelperJarPath != null) {
+                                                    Files.deleteIfExists(bootstrapHelperJarPath);
+                                                }
+                                            } catch (IOException ignored) {
+                                            }
+                                        }));
+                try {
+                    Class.forName("com.jaf.agent.FuzzingRequestContext", false, null);
+                } catch (ClassNotFoundException e) {
+                    System.err.println(
+                            "Failed to preload FuzzingRequestContext in bootstrap loader: " + e);
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to append agent classes to bootstrap search: " + e);
+            }
+        }
+    }
+
+    private static byte[] readClassBytes(String resourceName) throws IOException {
+        ClassLoader loader = JafAgent.class.getClassLoader();
+        if (loader == null) {
+            return null;
+        }
+        try (InputStream in = loader.getResourceAsStream(resourceName)) {
+            if (in == null) {
+                return null;
+            }
+            return in.readAllBytes();
         }
     }
 }
