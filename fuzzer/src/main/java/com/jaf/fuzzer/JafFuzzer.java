@@ -6,8 +6,12 @@ import com.jaf.fuzzer.nautilus.grammar.Grammar;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.NT;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.NonTerminal;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.Rule;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
 import java.util.Random;
@@ -43,6 +47,7 @@ public final class JafFuzzer {
         try (GrpcInstrumentedExecutor executor =
                 GrpcInstrumentedExecutor.forUnixDomainSocket(
                         cli.socketPath(), cli.targetUri(), REQUEST_TIMEOUT, COVERAGE_TIMEOUT)) {
+            waitForTarget(cli.targetUri());
             NautilusFuzzer fuzzer =
                     new NautilusFuzzer(grammar, grammar.start(), executor, config);
             Runtime.getRuntime().addShutdownHook(new Thread(executor::close));
@@ -53,6 +58,55 @@ public final class JafFuzzer {
                             + ", edges="
                             + fuzzer.coverage().size());
         }
+    }
+
+    private static void waitForTarget(URI target) throws InterruptedException {
+        URI healthUri = target;
+        try {
+            healthUri =
+                    new URI(
+                            target.getScheme(),
+                            target.getUserInfo(),
+                            target.getHost(),
+                            target.getPort(),
+                            "/",
+                            null,
+                            null);
+        } catch (Exception e) {
+            System.err.println("[JAF] Failed to derive health URI, using target directly: " + e);
+        }
+
+        HttpClient client =
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
+        int attempts = 60;
+        System.out.println("[JAF] Waiting for target availability at " + healthUri);
+        for (int i = 0; i < attempts; i++) {
+            HttpRequest request =
+                    HttpRequest.newBuilder(healthUri)
+                            .timeout(Duration.ofSeconds(1))
+                            .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                            .build();
+            try {
+                HttpResponse<Void> response =
+                        client.send(request, HttpResponse.BodyHandlers.discarding());
+                int status = response.statusCode();
+                if (status >= 200 && status < 500) {
+                    System.out.println("[JAF] Target reachable at " + healthUri);
+                    return;
+                }
+                System.out.println(
+                        "[JAF] Target responded with status "
+                                + status
+                                + ", waiting before retrying...");
+            } catch (IOException e) {
+                System.out.println("[JAF] Target not ready (" + e.getMessage() + "), retrying...");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            }
+            Thread.sleep(1000);
+        }
+        throw new RuntimeException("SUT did not become available at " + healthUri);
     }
 
     private static CliConfig parseArgs(String[] args) throws URISyntaxException {
