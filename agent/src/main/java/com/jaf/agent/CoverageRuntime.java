@@ -1,75 +1,104 @@
 package com.jaf.agent;
 
 import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Coverage runtime modeled after AFL's edge coverage scheme.
  *
- * <p>Instrumented code calls {@link #enterEdge(int)} at the beginning of each basic block. The
- * runtime tracks a rolling previous-location value per thread and bumps a byte-sized counter in the
- * global coverage map using {@code prev ^ cur} as the index.</p>
+ * <p>Instrumented code calls {@link #enterEdge(int)} at the beginning of each basic block. When
+ * tracing is enabled for the current thread, the runtime tracks a rolling previous-location value
+ * per thread and bumps a byte-sized counter in the thread-local coverage bitmap using
+ * {@code prev ^ cur} as the index.</p>
  */
 public final class CoverageRuntime {
     static final int MAP_SIZE = 1 << 16; // 64K entries, must stay a power of two.
 
-    private static final byte[] COVERAGE_MAP = new byte[MAP_SIZE];
-    private static final ThreadLocal<Integer> PREVIOUS_LOCATION =
-            ThreadLocal.withInitial(() -> 0);
-    private static final List<CoverageEventListener> LISTENERS =
-            new CopyOnWriteArrayList<>();
+    private static final byte[] GLOBAL_COVERAGE_MAP = new byte[MAP_SIZE];
+    private static final ThreadLocal<TraceState> TRACE_STATE = new ThreadLocal<>();
 
     private CoverageRuntime() {}
 
     /**
      * Records the execution of an edge identified by the provided block identifier.
      *
+     * <p>If tracing is not active for the current thread, the call is ignored.</p>
+     *
      * @param currentLocation pre-hashed block identifier (must already fit into {@link #MAP_SIZE})
      */
     public static void enterEdge(int currentLocation) {
-        int prev = PREVIOUS_LOCATION.get();
+        TraceState state = TRACE_STATE.get();
+        if (state == null || !state.isActive()) {
+            return;
+        }
+
+        int prev = state.previousLocation;
         int index = (prev ^ currentLocation) & (MAP_SIZE - 1);
-
-        byte value = COVERAGE_MAP[index];
-        if (value != (byte) 0xFF) {
-            byte updated = (byte) (value + 1);
-            COVERAGE_MAP[index] = updated;
-            if (value == 0) {
-                notifyNewEdge(index);
-            }
-        }
-
-        PREVIOUS_LOCATION.set((currentLocation >>> 1) & (MAP_SIZE - 1));
+        state.recordHit(index);
+        state.previousLocation = (currentLocation >>> 1) & (MAP_SIZE - 1);
     }
 
-    public static void registerListener(CoverageEventListener listener) {
-        if (listener != null) {
-            LISTENERS.add(listener);
+    /**
+     * Enables tracing for the current thread. When tracing transitions from inactive to active, the
+     * per-thread coverage bitmap is cleared.
+     */
+    public static void startTracing() {
+        TraceState state = TRACE_STATE.get();
+        if (state == null) {
+            state = new TraceState();
+            TRACE_STATE.set(state);
         }
+        state.start();
     }
 
-    public static void unregisterListener(CoverageEventListener listener) {
-        if (listener != null) {
-            LISTENERS.remove(listener);
+    /**
+     * Disables tracing for the current thread. When this call closes the outermost tracing scope,
+     * the trace bitmap collected for the scope is returned. Inner scopes yield {@code null} to
+     * signal that tracing is still active.
+     *
+     * @return the completed trace bitmap, or {@code null} if tracing remains active
+     */
+    public static byte[] stopTracing() {
+        TraceState state = TRACE_STATE.get();
+        if (state == null) {
+            return null;
         }
+        if (!state.stop()) {
+            return null;
+        }
+        TRACE_STATE.remove();
+        return state.bitmap;
     }
 
-    /** Resets the global coverage map and the current thread's previous-location pointer. */
+    /** Returns the trace bitmap for the current thread without modifying tracing state. */
+    public static byte[] currentTraceBitmap() {
+        TraceState state = TRACE_STATE.get();
+        if (state == null || !state.isActive()) {
+            return null;
+        }
+        return state.bitmap;
+    }
+
+    /** Returns whether tracing is currently active for the calling thread. */
+    public static boolean isTracingActive() {
+        TraceState state = TRACE_STATE.get();
+        return state != null && state.isActive();
+    }
+
+    /** Resets the global coverage map and clears any per-thread tracing state. */
     public static void reset() {
-        Arrays.fill(COVERAGE_MAP, (byte) 0);
-        PREVIOUS_LOCATION.set(0);
+        Arrays.fill(GLOBAL_COVERAGE_MAP, (byte) 0);
+        TRACE_STATE.remove();
     }
 
-    /** Returns a defensive copy of the coverage map for analysis tooling. */
+    /** Returns a defensive copy of the global coverage map for analysis tooling. */
     public static byte[] snapshot() {
-        return COVERAGE_MAP.clone();
+        return GLOBAL_COVERAGE_MAP.clone();
     }
 
-    /** Returns the number of entries with a non-zero execution count. */
+    /** Returns the number of entries in the global coverage map with a non-zero execution count. */
     public static int nonZeroCount() {
         int count = 0;
-        for (byte value : COVERAGE_MAP) {
+        for (byte value : GLOBAL_COVERAGE_MAP) {
             if (value != 0) {
                 count++;
             }
@@ -77,12 +106,43 @@ public final class CoverageRuntime {
         return count;
     }
 
-    private static void notifyNewEdge(int edgeId) {
-        for (CoverageEventListener listener : LISTENERS) {
-            try {
-                listener.onNewEdge(edgeId);
-            } catch (RuntimeException e) {
-                System.err.println("Coverage listener failed: " + e);
+    static byte[] globalCoverageMap() {
+        return GLOBAL_COVERAGE_MAP;
+    }
+
+    private static final class TraceState {
+        private final byte[] bitmap = new byte[MAP_SIZE];
+        private int previousLocation = 0;
+        private int depth = 0;
+
+        void start() {
+            if (depth == 0) {
+                Arrays.fill(bitmap, (byte) 0);
+                previousLocation = 0;
+            }
+            depth++;
+        }
+
+        boolean stop() {
+            if (depth == 0) {
+                return false;
+            }
+            depth--;
+            if (depth == 0) {
+                previousLocation = 0;
+                return true;
+            }
+            return false;
+        }
+
+        boolean isActive() {
+            return depth > 0;
+        }
+
+        void recordHit(int index) {
+            byte value = bitmap[index];
+            if (value != (byte) 0xFF) {
+                bitmap[index] = (byte) (value + 1);
             }
         }
     }

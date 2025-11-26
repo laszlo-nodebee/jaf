@@ -1,10 +1,10 @@
 package com.jaf.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -17,15 +17,22 @@ class CoverageRuntimeTest {
 
     @Test
     void incrementingEdgeProducesNonZeroEntry() {
+        CoverageRuntime.startTracing();
         CoverageRuntime.enterEdge(42);
         CoverageRuntime.enterEdge(7);
+        byte[] trace = CoverageRuntime.stopTracing();
+
+        CoverageMaps.mergeIntoGlobal(trace);
 
         assertNotEquals(0, CoverageRuntime.nonZeroCount());
     }
 
     @Test
     void resetClearsCoverageMap() {
+        CoverageRuntime.startTracing();
         CoverageRuntime.enterEdge(10);
+        byte[] trace = CoverageRuntime.stopTracing();
+        CoverageMaps.mergeIntoGlobal(trace);
         assertNotEquals(0, CoverageRuntime.nonZeroCount());
 
         CoverageRuntime.reset();
@@ -35,7 +42,12 @@ class CoverageRuntimeTest {
 
     @Test
     void snapshotReturnsCopy() {
+        CoverageRuntime.startTracing();
         CoverageRuntime.enterEdge(5);
+        byte[] trace = CoverageRuntime.stopTracing();
+
+        CoverageMaps.mergeIntoGlobal(trace);
+
         byte[] snapshot = CoverageRuntime.snapshot();
         snapshot[0] = (byte) 0x7F;
 
@@ -44,16 +56,13 @@ class CoverageRuntimeTest {
     }
 
     @Test
-    void listenersReceiveNewEdges() {
-        AtomicInteger recordedEdge = new AtomicInteger(-1);
-        CoverageEventListener listener = recordedEdge::set;
+    void hasNewCoverageDetectsPreviouslyUnseenEdge() {
+        CoverageRuntime.startTracing();
+        CoverageRuntime.enterEdge(15);
+        byte[] trace = CoverageRuntime.stopTracing();
 
-        CoverageRuntime.registerListener(listener);
-        try {
-            CoverageRuntime.enterEdge(15);
-            assertEquals(15, recordedEdge.get());
-        } finally {
-            CoverageRuntime.unregisterListener(listener);
-        }
+        assertTrue(CoverageMaps.hasNewCoverage(trace));
+        CoverageMaps.mergeIntoGlobal(trace);
+        assertFalse(CoverageMaps.hasNewCoverage(trace));
     }
 }

@@ -30,6 +30,9 @@ public final class FuzzingRequestContext {
             storeStateOnRequest(request, state);
         }
         CURRENT_STATE.set(state);
+        if (state.beginTracing()) {
+            CoverageRuntime.startTracing();
+        }
     }
 
     public static void requestFinished(Object request) {
@@ -48,13 +51,6 @@ public final class FuzzingRequestContext {
         completeRequest(request, state);
     }
 
-    public static void markNewCoverageObserved() {
-        RequestState state = CURRENT_STATE.get();
-        if (state != null) {
-            state.markCoverage();
-        }
-    }
-
     public static String currentRequestId() {
         RequestState state = CURRENT_STATE.get();
         if (state != null && state.requestId != null && !state.requestId.isEmpty()) {
@@ -70,6 +66,7 @@ public final class FuzzingRequestContext {
     }
 
     private static void completeRequest(Object request, RequestState state) {
+        finalizeCoverage(state);
         if (!state.markCompleted()) {
             return;
         }
@@ -85,6 +82,23 @@ public final class FuzzingRequestContext {
         }
     }
 
+    private static void finalizeCoverage(RequestState state) {
+        if (!state.beginCoverageFinalization()) {
+            return;
+        }
+        byte[] traceBitmap = null;
+        if (state.isTracingStarted()) {
+            traceBitmap = CoverageRuntime.stopTracing();
+        }
+        state.clearTracing();
+        boolean hasNewCoverage = state.hasNewCoverage();
+        if (traceBitmap != null) {
+            hasNewCoverage = CoverageMaps.hasNewCoverage(traceBitmap);
+            CoverageMaps.mergeIntoGlobal(traceBitmap);
+        }
+        state.setCoverage(hasNewCoverage);
+    }
+
     private static boolean handleAsyncIfNeeded(Object request, RequestState state) {
         Boolean asyncStarted = asBoolean(invokeNoArg(request, "isAsyncStarted"));
         if (asyncStarted == null || !asyncStarted.booleanValue()) {
@@ -92,6 +106,7 @@ public final class FuzzingRequestContext {
         }
         Object existingListener = getRequestAttribute(request, ASYNC_LISTENER_KEY);
         if (existingListener != null) {
+            finalizeCoverage(state);
             return true;
         }
 
@@ -151,6 +166,7 @@ public final class FuzzingRequestContext {
         } catch (Exception ignored) {
             return false;
         }
+        finalizeCoverage(state);
         return true;
     }
 
@@ -276,14 +292,32 @@ public final class FuzzingRequestContext {
     static final class RequestState {
         private final String requestId;
         private final AtomicBoolean completed = new AtomicBoolean(false);
+        private final AtomicBoolean tracingStarted = new AtomicBoolean(false);
+        private final AtomicBoolean coverageFinalized = new AtomicBoolean(false);
         private volatile boolean hasNewCoverage;
 
         RequestState(String requestId) {
             this.requestId = requestId;
         }
 
-        void markCoverage() {
-            hasNewCoverage = true;
+        boolean beginTracing() {
+            return tracingStarted.compareAndSet(false, true);
+        }
+
+        boolean isTracingStarted() {
+            return tracingStarted.get();
+        }
+
+        void setCoverage(boolean hasCoverage) {
+            hasNewCoverage = hasCoverage;
+        }
+
+        boolean beginCoverageFinalization() {
+            return coverageFinalized.compareAndSet(false, true);
+        }
+
+        void clearTracing() {
+            tracingStarted.set(false);
         }
 
         boolean hasNewCoverage() {

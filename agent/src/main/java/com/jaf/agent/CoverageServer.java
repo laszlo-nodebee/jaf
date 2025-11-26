@@ -22,7 +22,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-final class CoverageServer implements CoverageEventListener {
+final class CoverageServer {
     private final Path socketPath;
     private final Set<StreamObserver<CoverageEvent>> observers =
             Collections.newSetFromMap(new ConcurrentHashMap<>());
@@ -54,12 +54,10 @@ final class CoverageServer implements CoverageEventListener {
                         .addService(new CoverageServiceImpl())
                         .build()
                         .start();
-        CoverageRuntime.registerListener(this);
         FuzzingRequestContext.registerRequestFinishedListener(this::handleRequestFinished);
     }
 
     void stop() {
-        CoverageRuntime.unregisterListener(this);
         FuzzingRequestContext.registerRequestFinishedListener(null);
         if (server != null) {
             server.shutdown();
@@ -82,11 +80,6 @@ final class CoverageServer implements CoverageEventListener {
         }
         firstClientLatch.countDown();
         observers.clear();
-    }
-
-    @Override
-    public void onNewEdge(int edgeId) {
-        FuzzingRequestContext.markNewCoverageObserved();
     }
 
     private final class CoverageServiceImpl extends CoverageServiceGrpc.CoverageServiceImplBase {

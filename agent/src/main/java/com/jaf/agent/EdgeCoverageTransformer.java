@@ -75,7 +75,6 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         if (className == null) {
             return false;
         }
-        if (className.startsWith("com/jaf/demo/")) return true;
         if (className.startsWith("java/")
                 || className.startsWith("sun/")
                 || className.startsWith("jdk/")
@@ -86,11 +85,10 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
                 || className.startsWith("com/jaf/agent")) {
             return false;
         }
-        //if (!targetClasses.isEmpty()) {
-        //    return targetClasses.contains(className);
-        //}
+        if (!targetClasses.isEmpty()) {
+            return targetClasses.contains(className);
+        }
         return className.startsWith("com/jaf/demo/");
-	//return true;
     }
 
     private static final class EdgeCoverageMethodVisitor extends MethodVisitor {

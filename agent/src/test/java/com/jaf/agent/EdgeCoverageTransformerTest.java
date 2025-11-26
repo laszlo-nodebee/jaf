@@ -31,8 +31,11 @@ class EdgeCoverageTransformerTest {
         Object instance = sampleClass.getDeclaredConstructor().newInstance();
         Method method = sampleClass.getDeclaredMethod("branch", int.class);
 
+        CoverageRuntime.startTracing();
         method.invoke(instance, 5);
         method.invoke(instance, -3);
+        byte[] trace = CoverageRuntime.stopTracing();
+        CoverageMaps.mergeIntoGlobal(trace);
 
         assertTrue(
                 CoverageRuntime.nonZeroCount() >= 2,

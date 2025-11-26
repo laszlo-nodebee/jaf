@@ -178,7 +178,10 @@ public class JafAgent {
                 String[] helperClasses = {
                     "com/jaf/agent/FuzzingRequestContext.class",
                     "com/jaf/agent/FuzzingRequestContext$RequestState.class",
-                    "com/jaf/agent/FuzzingRequestContext$RequestFinishedListener.class"
+                    "com/jaf/agent/FuzzingRequestContext$RequestFinishedListener.class",
+                    "com/jaf/agent/CoverageRuntime.class",
+                    "com/jaf/agent/CoverageRuntime$TraceState.class",
+                    "com/jaf/agent/CoverageMaps.class"
                 };
                 Path tempJar =
                         Files.createTempFile("jaf-agent-bootstrap-", ".jar").toAbsolutePath();
