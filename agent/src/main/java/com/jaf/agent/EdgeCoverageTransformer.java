@@ -3,7 +3,6 @@ package com.jaf.agent;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
 import java.security.ProtectionDomain;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import org.objectweb.asm.ClassReader;
@@ -12,19 +11,10 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.commons.AdviceAdapter;
 
 class EdgeCoverageTransformer implements ClassFileTransformer {
     private static final String COVERAGE_RUNTIME_INTERNAL = "com/jaf/agent/CoverageRuntime";
-
-    private final Set<String> targetClasses;
-
-    EdgeCoverageTransformer() {
-        this(Collections.emptySet());
-    }
-
-    EdgeCoverageTransformer(Set<String> targetClasses) {
-        this.targetClasses = targetClasses == null ? Collections.emptySet() : targetClasses;
-    }
 
     @Override
     public byte[] transform(
@@ -38,12 +28,11 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         if (!shouldInstrument(className)) {
             return null;
         }
-	//System.out.println("transform(), instrumenting: " + className);
+	System.out.println("transform(), instrumenting: " + className);
 
         try {
             ClassReader reader = new ClassReader(classfileBuffer);
-            ClassWriter writer =
-                    new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+            ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
             ClassVisitor visitor =
                     new ClassVisitor(Opcodes.ASM9, writer) {
                         @Override
@@ -53,13 +42,14 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
                                 String descriptor,
                                 String signature,
                                 String[] exceptions) {
-                            MethodVisitor mv =
+                            MethodVisitor baseVisitor =
                                     super.visitMethod(access, name, descriptor, signature, exceptions);
-                            if ((access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) {
-                                return mv;
+                            if (baseVisitor == null
+                                    || (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) {
+                                return baseVisitor;
                             }
-                            return new EdgeCoverageMethodVisitor(
-                                    mv, className, name, descriptor);
+                            return new EdgeCoverageAdviceAdapter(
+                                    baseVisitor, access, name, descriptor, className);
                         }
                     };
 
@@ -75,40 +65,36 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         if (className == null) {
             return false;
         }
-        if (className.startsWith("java/")
-                || className.startsWith("sun/")
-                || className.startsWith("jdk/")
-                || className.startsWith("javax/")
-                || className.startsWith("org/springframework/boot/loader")
-                || className.startsWith("java/lang")
-                || className.startsWith("sun/launcher/LauncherHelper")
-                || className.startsWith("com/jaf/agent")) {
+        if (className == "java/lang/ThreadLocal"
+                || className.startsWith("com/jaf/agent")
+                || className.startsWith("org/objectweb/asm")
+                || className.startsWith("java.lang.ThreadLocal")) {
             return false;
         }
-        if (!targetClasses.isEmpty()) {
-            return targetClasses.contains(className);
-        }
-        return className.startsWith("com/jaf/demo/");
+        return true;
     }
 
-    private static final class EdgeCoverageMethodVisitor extends MethodVisitor {
+    private static final class EdgeCoverageAdviceAdapter extends AdviceAdapter {
         private final String className;
         private final String methodName;
         private final String methodDesc;
         private final Set<Label> seenLabels = new HashSet<>();
         private int blockIndex = 0;
 
-        EdgeCoverageMethodVisitor(
-                MethodVisitor delegate, String className, String methodName, String methodDesc) {
-            super(Opcodes.ASM9, delegate);
-            this.className = className;
-            this.methodName = methodName;
-            this.methodDesc = methodDesc;
+        EdgeCoverageAdviceAdapter(
+                MethodVisitor methodVisitor,
+                int access,
+                String name,
+                String descriptor,
+                String owner) {
+            super(Opcodes.ASM9, methodVisitor, access, name, descriptor);
+            this.className = owner;
+            this.methodName = name;
+            this.methodDesc = descriptor;
         }
 
         @Override
-        public void visitCode() {
-            super.visitCode();
+        protected void onMethodEnter() {
             injectEdgeInstrumentation();
         }
 
@@ -122,8 +108,8 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
 
         private void injectEdgeInstrumentation() {
             int edgeId = computeEdgeId(className, methodName, methodDesc, blockIndex++);
-            mv.visitLdcInsn(edgeId);
-            mv.visitMethodInsn(
+            visitLdcInsn(edgeId);
+            visitMethodInsn(
                     Opcodes.INVOKESTATIC,
                     COVERAGE_RUNTIME_INTERNAL,
                     "enterEdge",
