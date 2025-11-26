@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package com.jaf.proto;
+
+option java_package = "com.jaf.proto";
+option java_outer_classname = "CoverageProto";
+
+message SubscribeRequest {}
+
+message CoverageEvent {
+  uint32 edge_id = 1;
+}
+
+service CoverageService {
+  rpc Subscribe(SubscribeRequest) returns (stream CoverageEvent);
+}

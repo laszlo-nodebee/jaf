@@ -2,6 +2,11 @@ plugins {
     application
 }
 
+dependencies {
+    implementation(project(":protocol"))
+    implementation("io.grpc:grpc-netty-shaded:1.76.0")
+}
+
 application {
     mainClass.set("com.jaf.fuzzer.JafFuzzer")
 }

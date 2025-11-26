@@ -1,6 +1,8 @@
 package com.jaf.agent;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Coverage runtime modeled after AFL's edge coverage scheme.
@@ -15,6 +17,8 @@ public final class CoverageRuntime {
     private static final byte[] COVERAGE_MAP = new byte[MAP_SIZE];
     private static final ThreadLocal<Integer> PREVIOUS_LOCATION =
             ThreadLocal.withInitial(() -> 0);
+    private static final List<CoverageEventListener> LISTENERS =
+            new CopyOnWriteArrayList<>();
 
     private CoverageRuntime() {}
 
@@ -29,10 +33,26 @@ public final class CoverageRuntime {
 
         byte value = COVERAGE_MAP[index];
         if (value != (byte) 0xFF) {
-            COVERAGE_MAP[index] = (byte) (value + 1);
+            byte updated = (byte) (value + 1);
+            COVERAGE_MAP[index] = updated;
+            if (value == 0) {
+                notifyNewEdge(index);
+            }
         }
 
         PREVIOUS_LOCATION.set((currentLocation >>> 1) & (MAP_SIZE - 1));
+    }
+
+    public static void registerListener(CoverageEventListener listener) {
+        if (listener != null) {
+            LISTENERS.add(listener);
+        }
+    }
+
+    public static void unregisterListener(CoverageEventListener listener) {
+        if (listener != null) {
+            LISTENERS.remove(listener);
+        }
     }
 
     /** Resets the global coverage map and the current thread's previous-location pointer. */
@@ -55,5 +75,15 @@ public final class CoverageRuntime {
             }
         }
         return count;
+    }
+
+    private static void notifyNewEdge(int edgeId) {
+        for (CoverageEventListener listener : LISTENERS) {
+            try {
+                listener.onNewEdge(edgeId);
+            } catch (RuntimeException e) {
+                System.err.println("Coverage listener failed: " + e);
+            }
+        }
     }
 }

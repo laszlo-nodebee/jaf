@@ -3,6 +3,7 @@ import org.gradle.api.tasks.testing.Test
 
 plugins {
     base
+    id("com.google.protobuf") version "0.9.4" apply false
 }
 
 group = "com.jaf"

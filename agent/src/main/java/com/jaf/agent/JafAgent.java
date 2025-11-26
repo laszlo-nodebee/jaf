@@ -2,6 +2,7 @@ package com.jaf.agent;
 
 import java.lang.instrument.Instrumentation;
 import java.util.ArrayList;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import org.objectweb.asm.Opcodes;
@@ -9,17 +10,23 @@ import org.objectweb.asm.Opcodes;
 public class JafAgent {
     public static void premain(String agentArgs, Instrumentation inst) {
         logStartup(agentArgs);
+        startCoverageServer();
+        waitForFuzzerConnection();
         installTransformer(inst);
     }
 
     public static void premain(String agentArgs) {
         logStartup(agentArgs);
+        startCoverageServer();
+        waitForFuzzerConnection();
     }
 
     private static void logStartup(String agentArgs) {
         System.out.println(
                 "JAF agent initialized. args=" + agentArgs + ", ASM API=" + Opcodes.ASM9);
     }
+
+    private static CoverageServer coverageServer;
 
     private static void installTransformer(Instrumentation inst) {
         String[] targets = {
@@ -106,6 +113,41 @@ public class JafAgent {
             }
         } catch (Exception e) {
             System.err.println("Failed to install Runtime exec logging transformer: " + e);
+        }
+    }
+
+    private static synchronized void startCoverageServer() {
+        if (coverageServer != null) {
+            return;
+        }
+        try {
+            Path socketPath = Path.of("/tmp/jaf-coverage.sock");
+            CoverageServer server = new CoverageServer(socketPath);
+            server.start();
+            coverageServer = server;
+            Runtime.getRuntime()
+                    .addShutdownHook(new Thread(() -> {
+                        if (coverageServer != null) {
+                            coverageServer.stop();
+                        }
+                    }));
+        } catch (Exception e) {
+            System.err.println("Failed to start coverage server: " + e);
+        }
+    }
+
+    private static void waitForFuzzerConnection() {
+        CoverageServer server = coverageServer;
+        if (server == null || server.hasClientConnected()) {
+            return;
+        }
+        System.out.println("JAF agent waiting for fuzzer connection on " + server.getSocketPath());
+        try {
+            server.awaitFirstClient();
+            System.out.println("JAF fuzzer connected.");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("Interrupted while waiting for fuzzer connection.");
         }
     }
 }

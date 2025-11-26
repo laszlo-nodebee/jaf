@@ -2,7 +2,9 @@ package com.jaf.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -39,5 +41,19 @@ class CoverageRuntimeTest {
 
         byte[] secondSnapshot = CoverageRuntime.snapshot();
         assertNotEquals(0x7F, secondSnapshot[0] & 0xFF);
+    }
+
+    @Test
+    void listenersReceiveNewEdges() {
+        AtomicInteger recordedEdge = new AtomicInteger(-1);
+        CoverageEventListener listener = recordedEdge::set;
+
+        CoverageRuntime.registerListener(listener);
+        try {
+            CoverageRuntime.enterEdge(15);
+            assertEquals(15, recordedEdge.get());
+        } finally {
+            CoverageRuntime.unregisterListener(listener);
+        }
     }
 }

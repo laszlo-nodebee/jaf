@@ -38,6 +38,7 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         if (!shouldInstrument(className)) {
             return null;
         }
+	System.out.println("transform(), instrumenting: " + className);
 
         try {
             ClassReader reader = new ClassReader(classfileBuffer);
@@ -74,6 +75,7 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         if (className == null) {
             return false;
         }
+	if (className.equals("com/jaf/demo/DemoApp")) return true;
         if (className.startsWith("java/")
                 || className.startsWith("sun/")
                 || className.startsWith("jdk/")
