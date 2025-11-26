@@ -213,6 +213,11 @@ public final class NautilusFuzzer {
         queue.addLast(new QueueItem(tree, stage, newEdges));
     }
 
+    // Visible for testing.
+    void triageForTesting(DerivationTree tree, Stage stage) {
+        triageAndEnqueue(tree, stage);
+    }
+
     private ExecutionResult run(byte[] input) {
         try {
             return executor.run(input);

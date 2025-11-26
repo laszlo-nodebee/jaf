@@ -60,7 +60,7 @@ public final class JafFuzzer {
         }
     }
 
-    private static void waitForTarget(URI target) throws InterruptedException {
+    static void waitForTarget(URI target) throws InterruptedException {
         URI healthUri = target;
         try {
             healthUri =
@@ -109,7 +109,7 @@ public final class JafFuzzer {
         throw new RuntimeException("SUT did not become available at " + healthUri);
     }
 
-    private static CliConfig parseArgs(String[] args) throws URISyntaxException {
+    static CliConfig parseArgs(String[] args) throws URISyntaxException {
         int duration = DEFAULT_DURATION_SECONDS;
         String socketPath = DEFAULT_SOCKET;
         URI target = DEFAULT_TARGET;
@@ -135,7 +135,7 @@ public final class JafFuzzer {
         return new CliConfig(duration, socketPath, target);
     }
 
-    private static Grammar buildDefaultGrammar() {
+    static Grammar buildDefaultGrammar() {
         NonTerminal START = new NonTerminal("START");
         NonTerminal OBJECT = new NonTerminal("OBJECT");
         NonTerminal MEMBERS = new NonTerminal("MEMBERS");
@@ -197,5 +197,5 @@ public final class JafFuzzer {
         return grammar;
     }
 
-    private record CliConfig(int durationSeconds, String socketPath, URI targetUri) {}
+    static record CliConfig(int durationSeconds, String socketPath, URI targetUri) {}
 }
