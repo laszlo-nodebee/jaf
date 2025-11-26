@@ -3,6 +3,7 @@ package com.jaf.agent;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
@@ -20,7 +21,8 @@ class EdgeCoverageTransformerTest {
     void instrumentationUpdatesCoverageMap() throws Exception {
         byte[] originalBytes = SampleClassFactory.createSampleClass();
 
-        EdgeCoverageTransformer transformer = new EdgeCoverageTransformer();
+        EdgeCoverageTransformer transformer =
+                new EdgeCoverageTransformer(Set.of("sample/Sample"));
         byte[] instrumented =
                 transformer.transform(
                         null, null, "sample/Sample", null, null, originalBytes);

@@ -105,8 +105,7 @@ public class JafAgent {
         };
         MethodLoggingTransformer loggingTransformer = new MethodLoggingTransformer(targets);
         ServletRequestIdTransformer requestIdTransformer = new ServletRequestIdTransformer();
-        EdgeCoverageTransformer coverageTransformer =
-                new EdgeCoverageTransformer(loggingTransformer.targetClasses());
+        EdgeCoverageTransformer coverageTransformer = new EdgeCoverageTransformer();
         try {
             inst.addTransformer(coverageTransformer, true);
             inst.addTransformer(requestIdTransformer, true);
