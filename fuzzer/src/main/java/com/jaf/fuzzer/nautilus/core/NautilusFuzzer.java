@@ -79,9 +79,13 @@ public final class NautilusFuzzer {
     public void fuzz(Duration budget) {
         seed();
         Instant deadline = Instant.now().plus(budget);
-        while (Instant.now().isBefore(deadline) && !queue.isEmpty()) {
+        while (Instant.now().isBefore(deadline)) {
             QueueItem item = queue.pollFirst();
             if (item == null) {
+                if (corpus.isEmpty()) {
+                    break;
+                }
+                mutateCorpusUntil(deadline);
                 break;
             }
             switch (item.stage) {
@@ -156,6 +160,17 @@ public final class NautilusFuzzer {
     }
 
     private void processRandom(QueueItem item, Instant deadline) {
+        Instant stop = Instant.now().plus(config.randomStageBudgetPerItem);
+        mutateWithRandomStage(item.tree, deadline, stop, false);
+    }
+
+    private void mutateCorpusUntil(Instant deadline) {
+        mutateWithRandomStage(
+                corpus.get(config.random.nextInt(corpus.size())), deadline, null, true);
+    }
+
+    private void mutateWithRandomStage(
+            DerivationTree start, Instant deadline, Instant stop, boolean reseedOnFailure) {
         Random random = config.random;
         var subtreeReplacement = new Mutators.RandomSubtreeReplacement(grammar, generator);
         var splicing =
@@ -164,9 +179,8 @@ public final class NautilusFuzzer {
                                 ? null
                                 : corpus.get(random.nextInt(corpus.size())));
 
-        Instant stop = Instant.now().plus(config.randomStageBudgetPerItem);
-        DerivationTree current = item.tree;
-        while (Instant.now().isBefore(stop) && Instant.now().isBefore(deadline)) {
+        DerivationTree current = start;
+        while (Instant.now().isBefore(deadline) && (stop == null || Instant.now().isBefore(stop))) {
             DerivationTree mutated =
                     random.nextBoolean()
                             ? subtreeReplacement.mutate(current, random)
@@ -174,6 +188,8 @@ public final class NautilusFuzzer {
             if (mutated != null) {
                 executeAndHandle(mutated);
                 current = mutated;
+            } else if (reseedOnFailure && !corpus.isEmpty()) {
+                current = corpus.get(random.nextInt(corpus.size()));
             }
         }
     }
