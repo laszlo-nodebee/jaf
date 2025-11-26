@@ -1,6 +1,9 @@
 package com.example.agent;
 
 import java.lang.instrument.Instrumentation;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import org.objectweb.asm.Opcodes;
 
 public class HelloAgent {
@@ -19,11 +22,82 @@ public class HelloAgent {
     }
 
     private static void installTransformer(Instrumentation inst) {
-        RuntimeExecLoggingTransformer transformer = new RuntimeExecLoggingTransformer();
+        String[] targets = {
+            "java/lang/Runtime#exec([Ljava/lang/String;[Ljava/lang/String;Ljava/io/File;)Ljava/lang/Process;|command,env,dir",
+            "java/io/ObjectInputStream#readObject()Ljava/lang/Object;",
+            "java/io/ObjectInputStream#readUnshared()Ljava/lang/Object;",
+            "java/io/ObjectInputFilter$Config#setSerialFilter(Ljava/io/ObjectInputFilter;)V|filter",
+            "java/rmi/Naming#lookup(Ljava/lang/String;)Ljava/rmi/Remote;|name",
+            "java/rmi/registry/Registry#lookup(Ljava/lang/String;)Ljava/rmi/Remote;|name",
+            "java/rmi/registry/LocateRegistry#getRegistry()Ljava/rmi/registry/Registry;",
+            "java/rmi/registry/LocateRegistry#getRegistry(I)Ljava/rmi/registry/Registry;|port",
+            "java/rmi/registry/LocateRegistry#getRegistry(Ljava/lang/String;)Ljava/rmi/registry/Registry;|host",
+            "java/rmi/registry/LocateRegistry#getRegistry(Ljava/lang/String;I)Ljava/rmi/registry/Registry;|host,port",
+            "java/rmi/registry/LocateRegistry#getRegistry(Ljava/lang/String;ILjava/rmi/server/RMIClientSocketFactory;)Ljava/rmi/registry/Registry;|host,port,factory",
+            "javax/naming/InitialContext#lookup(Ljava/lang/String;)Ljava/lang/Object;|name",
+            "javax/naming/Context#lookup(Ljava/lang/String;)Ljava/lang/Object;|name",
+            "javax/naming/Context#lookup(Ljavax/naming/Name;)Ljava/lang/Object;|name",
+            "org/apache/logging/log4j/core/lookup/JndiLookup#lookup(Ljava/lang/String;)Ljava/lang/String;|key",
+            "javax/jms/ObjectMessage#getObject()Ljava/lang/Object;",
+            "javax/jms/Message#getBody(Ljava/lang/Class;)Ljava/lang/Object;|type",
+            "javax/management/remote/JMXConnectorFactory#connect(Ljavax/management/remote/JMXServiceURL;)Ljavax/management/remote/JMXConnector;|url",
+            "javax/management/remote/JMXConnectorFactory#connect(Ljavax/management/remote/JMXServiceURL;Ljava/util/Map;)Ljavax/management/remote/JMXConnector;|url,env",
+            "javax/management/remote/JMXConnectorServerFactory#newJMXConnectorServer(Ljavax/management/remote/JMXServiceURL;Ljava/util/Map;Ljavax/management/MBeanServer;)Ljavax/management/remote/JMXConnectorServer;|url,env,server",
+            "com/sun/tools/attach/VirtualMachine#attach(Ljava/lang/String;)Lcom/sun/tools/attach/VirtualMachine;|id",
+            "com/sun/tools/attach/VirtualMachine#attach(Lcom/sun/tools/attach/VirtualMachineDescriptor;)Lcom/sun/tools/attach/VirtualMachine;|descriptor",
+            "com/sun/tools/attach/VirtualMachine#loadAgent(Ljava/lang/String;)V|agentPath",
+            "com/sun/tools/attach/VirtualMachine#loadAgent(Ljava/lang/String;Ljava/lang/String;)V|agentPath,options",
+            "com/sun/tools/attach/VirtualMachine#loadAgentLibrary(Ljava/lang/String;)V|library",
+            "com/sun/tools/attach/VirtualMachine#loadAgentLibrary(Ljava/lang/String;Ljava/lang/String;)V|library,options",
+            "javax/script/ScriptEngine#eval(Ljava/lang/String;)Ljava/lang/Object;|script",
+            "javax/script/ScriptEngine#eval(Ljava/lang/String;Ljavax/script/ScriptContext;)Ljava/lang/Object;|script,context",
+            "javax/script/ScriptEngineManager#getEngineByName(Ljava/lang/String;)Ljavax/script/ScriptEngine;|name",
+            "org/springframework/expression/spel/standard/SpelExpressionParser#parseExpression(Ljava/lang/String;)Lorg/springframework/expression/Expression;|expression",
+            "org/springframework/expression/Expression#getValue()Ljava/lang/Object;",
+            "org/springframework/expression/Expression#getValue(Ljava/lang/Object;)Ljava/lang/Object;|context",
+            "ognl/Ognl#getValue(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;|expression,root",
+            "ognl/Ognl#getValue(Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;|expression,root,context",
+            "com/fasterxml/jackson/databind/ObjectMapper#enableDefaultTyping()Lcom/fasterxml/jackson/databind/ObjectMapper;",
+            "com/fasterxml/jackson/databind/ObjectMapper#enableDefaultTyping(Lcom/fasterxml/jackson/databind/ObjectMapper$DefaultTyping;)Lcom/fasterxml/jackson/databind/ObjectMapper;|typing",
+            "com/fasterxml/jackson/databind/ObjectMapper#enableDefaultTyping(Lcom/fasterxml/jackson/databind/ObjectMapper$DefaultTyping;Lcom/fasterxml/jackson/annotation/JsonTypeInfo$As;)Lcom/fasterxml/jackson/databind/ObjectMapper;|typing,as",
+            "com/fasterxml/jackson/databind/ObjectMapper#activateDefaultTyping(Lcom/fasterxml/jackson/databind/jsontype/PolymorphicTypeValidator;)Lcom/fasterxml/jackson/databind/ObjectMapper;|validator",
+            "com/fasterxml/jackson/databind/ObjectMapper#activateDefaultTyping(Lcom/fasterxml/jackson/databind/jsontype/PolymorphicTypeValidator;Lcom/fasterxml/jackson/annotation/JsonTypeInfo$As;)Lcom/fasterxml/jackson/databind/ObjectMapper;|validator,as",
+            "com/fasterxml/jackson/databind/ObjectMapper#activateDefaultTyping(Lcom/fasterxml/jackson/databind/jsontype/PolymorphicTypeValidator;Lcom/fasterxml/jackson/annotation/JsonTypeInfo$As;Ljava/lang/Class;)Lcom/fasterxml/jackson/databind/ObjectMapper;|validator,as,subtype",
+            "com/fasterxml/jackson/databind/ObjectMapper#readValue(Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/Object;|json,type",
+            "com/fasterxml/jackson/databind/ObjectMapper#readValue(Ljava/io/InputStream;Ljava/lang/Class;)Ljava/lang/Object;|input,type",
+            "com/fasterxml/jackson/databind/ObjectMapper#readValue(Ljava/io/File;Ljava/lang/Class;)Ljava/lang/Object;|file,type",
+            "org/yaml/snakeyaml/Yaml#load(Ljava/lang/String;)Ljava/lang/Object;|yaml",
+            "org/yaml/snakeyaml/Yaml#load(Ljava/io/InputStream;)Ljava/lang/Object;|yaml",
+            "org/yaml/snakeyaml/Yaml#loadAll(Ljava/lang/String;)Ljava/lang/Iterable;|yaml",
+            "org/yaml/snakeyaml/Yaml#loadAll(Ljava/io/InputStream;)Ljava/lang/Iterable;|yaml",
+            "javax/xml/parsers/DocumentBuilder#parse(Ljava/io/InputStream;)Lorg/w3c/dom/Document;|input",
+            "javax/xml/parsers/DocumentBuilder#parse(Ljava/lang/String;)Lorg/w3c/dom/Document;|uri",
+            "javax/xml/parsers/DocumentBuilder#parse(Ljava/io/File;)Lorg/w3c/dom/Document;|file",
+            "org/xml/sax/SAXParser#parse(Ljava/io/InputStream;Lorg/xml/sax/helpers/DefaultHandler;)V|input,handler",
+            "javax/xml/transform/TransformerFactory#newTransformer(Ljavax/xml/transform/Source;)Ljavax/xml/transform/Transformer;|source",
+            "javax/xml/transform/Transformer#transform(Ljavax/xml/transform/Source;Ljavax/xml/transform/Result;)V|source,result",
+            "java/lang/ProcessBuilder#start()Ljava/lang/Process;",
+            "java/util/zip/ZipInputStream#getNextEntry()Ljava/util/zip/ZipEntry;",
+            "java/util/jar/JarInputStream#getNextJarEntry()Ljava/util/jar/JarEntry;",
+            "java/net/URLClassLoader#<init>([Ljava/net/URL;)V|urls",
+            "java/net/URLClassLoader#addURL(Ljava/net/URL;)V|url",
+            "java/lang/invoke/MethodHandles$Lookup#defineClass([B)Ljava/lang/Class;"
+        };
+        MethodLoggingTransformer transformer = new MethodLoggingTransformer(targets);
         try {
             inst.addTransformer(transformer, true);
             if (inst.isRetransformClassesSupported()) {
-                inst.retransformClasses(Runtime.class);
+                Set<String> targetNames = transformer.targetClasses();
+                List<Class<?>> toRetransform = new ArrayList<>();
+                for (Class<?> loaded : inst.getAllLoadedClasses()) {
+                    String internalName = loaded.getName().replace('.', '/');
+                    if (targetNames.contains(internalName) && inst.isModifiableClass(loaded)) {
+                        toRetransform.add(loaded);
+                    }
+                }
+                if (!toRetransform.isEmpty()) {
+                    inst.retransformClasses(toRetransform.toArray(new Class<?>[0]));
+                }
             } else {
                 System.out.println("Instrumentation does not support retransformation.");
             }
