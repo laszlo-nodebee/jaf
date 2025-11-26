@@ -1,4 +1,4 @@
-package com.example.agent;
+package com.jaf.agent;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;

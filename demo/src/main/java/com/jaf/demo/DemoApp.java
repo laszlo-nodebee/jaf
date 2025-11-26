@@ -1,12 +1,12 @@
-package com.example.demo;
+package com.jaf.demo;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 
-public class HelloWorld {
+public class DemoApp {
     public static void main(String[] args) {
-        System.out.println("Hello World from the demo app!");
+        System.out.println("JAF demo application running.");
         runIdCommand();
     }
 

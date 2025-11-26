@@ -1,29 +1,23 @@
-import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.tasks.compile.JavaCompile
 
 plugins {
-    `java`
+    base
 }
 
-group = "com.example"
+group = "com.jaf"
 version = "0.1.0"
 
-repositories {
-    mavenCentral()
-}
+subprojects {
+    apply(plugin = "java")
 
-dependencies {
-    implementation("org.ow2.asm:asm:9.9")
-}
+    group = rootProject.group
+    version = rootProject.version
 
-tasks.jar {
-    archiveBaseName.set("hello-agent")
-    manifest {
-        from(file("agent-manifest.mf"))
+    repositories {
+        mavenCentral()
     }
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(
-        configurations.runtimeClasspath.get().map { dependency ->
-            if (dependency.isDirectory) dependency else zipTree(dependency)
-        }
-    )
+
+    tasks.withType<JavaCompile>().configureEach {
+        options.encoding = "UTF-8"
+    }
 }

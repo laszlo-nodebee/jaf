@@ -6,3 +6,5 @@
  */
 
 rootProject.name = "java-fuzz"
+include("agent")
+include("fuzzer")

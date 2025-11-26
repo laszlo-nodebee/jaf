@@ -1,4 +1,4 @@
-package com.example.agent;
+package com.jaf.agent;
 
 import java.lang.instrument.Instrumentation;
 import java.util.ArrayList;
@@ -6,19 +6,19 @@ import java.util.List;
 import java.util.Set;
 import org.objectweb.asm.Opcodes;
 
-public class HelloAgent {
+public class JafAgent {
     public static void premain(String agentArgs, Instrumentation inst) {
-        logHello(agentArgs);
+        logStartup(agentArgs);
         installTransformer(inst);
     }
 
     public static void premain(String agentArgs) {
-        logHello(agentArgs);
+        logStartup(agentArgs);
     }
 
-    private static void logHello(String agentArgs) {
+    private static void logStartup(String agentArgs) {
         System.out.println(
-                "Hello from Java Agent! args=" + agentArgs + ", ASM API=" + Opcodes.ASM9);
+                "JAF agent initialized. args=" + agentArgs + ", ASM API=" + Opcodes.ASM9);
     }
 
     private static void installTransformer(Instrumentation inst) {
