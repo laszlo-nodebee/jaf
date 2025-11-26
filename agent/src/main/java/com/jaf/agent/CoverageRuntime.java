@@ -78,6 +78,7 @@ public final class CoverageRuntime {
     }
 
     private static void notifyNewEdge(int edgeId) {
+	System.out.println("new edge: " + String.valueOf(edgeId));
         for (CoverageEventListener listener : LISTENERS) {
             try {
                 listener.onNewEdge(edgeId);

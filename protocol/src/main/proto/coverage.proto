@@ -8,7 +8,8 @@ option java_outer_classname = "CoverageProto";
 message SubscribeRequest {}
 
 message CoverageEvent {
-  uint32 edge_id = 1;
+  string request_id = 1;
+  bool has_new_coverage = 2;
 }
 
 service CoverageService {

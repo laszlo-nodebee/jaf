@@ -12,8 +12,11 @@ import java.util.Set;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.commons.AdviceAdapter;
 
 class ServletRequestIdTransformer implements ClassFileTransformer {
     private final Map<String, List<MethodTarget>> targetsByClass;
@@ -82,18 +85,37 @@ class ServletRequestIdTransformer implements ClassFileTransformer {
                             return mv;
                         }
 
-                        return new MethodVisitor(Opcodes.ASM9, mv) {
+                        return new AdviceAdapter(Opcodes.ASM9, mv, access, name, descriptor) {
+                            private final Type contextType =
+                                    Type.getType("Lcom/jaf/agent/FuzzingRequestContext;");
+                            private final org.objectweb.asm.commons.Method onEnterMethod =
+                                    org.objectweb.asm.commons.Method.getMethod(
+                                            "void updateFromServletRequest (java.lang.Object)");
+                            private final org.objectweb.asm.commons.Method onExitMethod =
+                                    org.objectweb.asm.commons.Method.getMethod(
+                                            "void requestFinished (java.lang.Object)");
                             @Override
-                            public void visitCode() {
-                                super.visitCode();
-                                int requestIndex = ((access & Opcodes.ACC_STATIC) != 0) ? 0 : 1;
-                                mv.visitVarInsn(Opcodes.ALOAD, requestIndex);
-                                mv.visitMethodInsn(
-                                        Opcodes.INVOKESTATIC,
-                                        "com/jaf/agent/FuzzingRequestContext",
-                                        "updateFromServletRequest",
-                                        "(Ljava/lang/Object;)V",
-                                        false);
+                            protected void onMethodEnter() {
+                                loadArg(0);
+                                invokeStatic(contextType, onEnterMethod);
+                            }
+
+                            @Override
+                            protected void onMethodExit(int opcode) {
+                                if (opcode == ATHROW) {
+                                    return;
+                                }
+                                loadArg(0);
+                                invokeStatic(contextType, onExitMethod);
+                            }
+
+                            @Override
+                            public void visitInsn(int opcode) {
+                                if (opcode == ATHROW) {
+                                    loadArg(0);
+                                    invokeStatic(contextType, onExitMethod);
+                                }
+                                super.visitInsn(opcode);
                             }
                         };
                     }

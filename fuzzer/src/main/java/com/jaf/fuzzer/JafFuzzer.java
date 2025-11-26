@@ -45,7 +45,11 @@ public final class JafFuzzer {
                         new StreamObserver<CoverageEvent>() {
                             @Override
                             public void onNext(CoverageEvent value) {
-                                System.out.println("[JAF] New coverage edge: " + value.getEdgeId());
+                                System.out.println(
+                                        "[JAF] Request finished: id="
+                                                + value.getRequestId()
+                                                + ", newCoverage="
+                                                + value.getHasNewCoverage());
                             }
 
                             @Override

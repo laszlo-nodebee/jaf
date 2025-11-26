@@ -55,10 +55,12 @@ final class CoverageServer implements CoverageEventListener {
                         .build()
                         .start();
         CoverageRuntime.registerListener(this);
+        FuzzingRequestContext.registerRequestFinishedListener(this::handleRequestFinished);
     }
 
     void stop() {
         CoverageRuntime.unregisterListener(this);
+        FuzzingRequestContext.registerRequestFinishedListener(null);
         if (server != null) {
             server.shutdown();
             try {
@@ -84,10 +86,7 @@ final class CoverageServer implements CoverageEventListener {
 
     @Override
     public void onNewEdge(int edgeId) {
-        CoverageEvent event = CoverageEvent.newBuilder().setEdgeId(edgeId).build();
-        for (StreamObserver<CoverageEvent> observer : observers) {
-            observer.onNext(event);
-        }
+        FuzzingRequestContext.markNewCoverageObserved();
     }
 
     private final class CoverageServiceImpl extends CoverageServiceGrpc.CoverageServiceImplBase {
@@ -125,5 +124,16 @@ final class CoverageServer implements CoverageEventListener {
             return true;
         }
         return firstClientLatch.await(timeout, unit);
+    }
+
+    private void handleRequestFinished(String requestId, boolean hasNewCoverage) {
+        CoverageEvent event =
+                CoverageEvent.newBuilder()
+                        .setRequestId(requestId != null ? requestId : "")
+                        .setHasNewCoverage(hasNewCoverage)
+                        .build();
+        for (StreamObserver<CoverageEvent> observer : observers) {
+            observer.onNext(event);
+        }
     }
 }

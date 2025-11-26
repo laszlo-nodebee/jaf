@@ -176,11 +176,11 @@ public class JafAgent {
                 return;
             }
             try {
-                byte[] classBytes = readClassBytes("com/jaf/agent/FuzzingRequestContext.class");
-                if (classBytes == null) {
-                    System.err.println("Failed to load FuzzingRequestContext class bytes.");
-                    return;
-                }
+                String[] helperClasses = {
+                    "com/jaf/agent/FuzzingRequestContext.class",
+                    "com/jaf/agent/FuzzingRequestContext$RequestState.class",
+                    "com/jaf/agent/FuzzingRequestContext$RequestFinishedListener.class"
+                };
                 Path tempJar =
                         Files.createTempFile("jaf-agent-bootstrap-", ".jar").toAbsolutePath();
                 try (JarOutputStream jos =
@@ -190,10 +190,17 @@ public class JafAgent {
                                         StandardOpenOption.CREATE,
                                         StandardOpenOption.TRUNCATE_EXISTING,
                                         StandardOpenOption.WRITE))) {
-                    JarEntry entry = new JarEntry("com/jaf/agent/FuzzingRequestContext.class");
-                    jos.putNextEntry(entry);
-                    jos.write(classBytes);
-                    jos.closeEntry();
+                    for (String helperClass : helperClasses) {
+                        byte[] classBytes = readClassBytes(helperClass);
+                        if (classBytes == null) {
+                            System.err.println("Failed to load bootstrap helper: " + helperClass);
+                            continue;
+                        }
+                        JarEntry entry = new JarEntry(helperClass);
+                        jos.putNextEntry(entry);
+                        jos.write(classBytes);
+                        jos.closeEntry();
+                    }
                 }
                 JarFile jarFile = new JarFile(tempJar.toFile());
                 inst.appendToBootstrapClassLoaderSearch(jarFile);
