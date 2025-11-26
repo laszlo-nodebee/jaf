@@ -83,11 +83,14 @@ public class JafAgent {
             "java/net/URLClassLoader#addURL(Ljava/net/URL;)V|url",
             "java/lang/invoke/MethodHandles$Lookup#defineClass([B)Ljava/lang/Class;"
         };
-        MethodLoggingTransformer transformer = new MethodLoggingTransformer(targets);
+        MethodLoggingTransformer loggingTransformer = new MethodLoggingTransformer(targets);
+        EdgeCoverageTransformer coverageTransformer =
+                new EdgeCoverageTransformer(loggingTransformer.targetClasses());
         try {
-            inst.addTransformer(transformer, true);
+            inst.addTransformer(coverageTransformer, true);
+            inst.addTransformer(loggingTransformer, true);
             if (inst.isRetransformClassesSupported()) {
-                Set<String> targetNames = transformer.targetClasses();
+                Set<String> targetNames = loggingTransformer.targetClasses();
                 List<Class<?>> toRetransform = new ArrayList<>();
                 for (Class<?> loaded : inst.getAllLoadedClasses()) {
                     String internalName = loaded.getName().replace('.', '/');
