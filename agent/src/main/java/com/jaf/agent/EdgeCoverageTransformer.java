@@ -28,7 +28,6 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         if (!shouldInstrument(className)) {
             return null;
         }
-	System.out.println("transform(), instrumenting: " + className);
 
         try {
             ClassReader reader = new ClassReader(classfileBuffer);
@@ -80,6 +79,9 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         private final String methodDesc;
         private final Set<Label> seenLabels = new HashSet<>();
         private int blockIndex = 0;
+        private Label pendingLabel;
+        private int pendingEdgeId;
+        private boolean pendingInjected;
 
         EdgeCoverageAdviceAdapter(
                 MethodVisitor methodVisitor,
@@ -102,12 +104,17 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         public void visitLabel(Label label) {
             super.visitLabel(label);
             if (seenLabels.add(label)) {
-                injectEdgeInstrumentation();
+                pendingLabel = label;
+                pendingEdgeId = nextEdgeId();
+                pendingInjected = false;
             }
         }
 
         private void injectEdgeInstrumentation() {
-            int edgeId = computeEdgeId(className, methodName, methodDesc, blockIndex++);
+            emitEdge(nextEdgeId());
+        }
+
+        private void emitEdge(int edgeId) {
             visitLdcInsn(edgeId);
             visitMethodInsn(
                     Opcodes.INVOKESTATIC,
@@ -115,6 +122,109 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
                     "enterEdge",
                     "(I)V",
                     false);
+        }
+
+        private int nextEdgeId() {
+            return computeEdgeId(className, methodName, methodDesc, blockIndex++);
+        }
+
+        private void injectPendingIfAny() {
+            if (pendingLabel != null && !pendingInjected) {
+                emitEdge(pendingEdgeId);
+                pendingInjected = true;
+                pendingLabel = null;
+            }
+        }
+
+        @Override
+        public void visitFrame(
+                int type, int numLocal, Object[] local, int numStack, Object[] stack) {
+            super.visitFrame(type, numLocal, local, numStack, stack);
+            injectPendingIfAny();
+        }
+
+        @Override
+        public void visitInsn(int opcode) {
+            injectPendingIfAny();
+            super.visitInsn(opcode);
+        }
+
+        @Override
+        public void visitVarInsn(int opcode, int var) {
+            injectPendingIfAny();
+            super.visitVarInsn(opcode, var);
+        }
+
+        @Override
+        public void visitTypeInsn(int opcode, String type) {
+            injectPendingIfAny();
+            super.visitTypeInsn(opcode, type);
+        }
+
+        @Override
+        public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
+            injectPendingIfAny();
+            super.visitFieldInsn(opcode, owner, name, descriptor);
+        }
+
+        @Override
+        public void visitMethodInsn(
+                int opcode, String owner, String name, String descriptor, boolean isInterface) {
+            injectPendingIfAny();
+            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+        }
+
+        @Override
+        public void visitInvokeDynamicInsn(
+                String name, String descriptor, org.objectweb.asm.Handle bootstrapMethodHandle,
+                Object... bootstrapMethodArguments) {
+            injectPendingIfAny();
+            super.visitInvokeDynamicInsn(name, descriptor, bootstrapMethodHandle,
+                    bootstrapMethodArguments);
+        }
+
+        @Override
+        public void visitIntInsn(int opcode, int operand) {
+            injectPendingIfAny();
+            super.visitIntInsn(opcode, operand);
+        }
+
+        @Override
+        public void visitIincInsn(int var, int increment) {
+            injectPendingIfAny();
+            super.visitIincInsn(var, increment);
+        }
+
+        @Override
+        public void visitMultiANewArrayInsn(String descriptor, int numDimensions) {
+            injectPendingIfAny();
+            super.visitMultiANewArrayInsn(descriptor, numDimensions);
+        }
+
+        @Override
+        public void visitLdcInsn(Object value) {
+            injectPendingIfAny();
+            super.visitLdcInsn(value);
+        }
+
+        @Override
+        public void visitJumpInsn(int opcode, Label label) {
+            injectPendingIfAny();
+            super.visitJumpInsn(opcode, label);
+        }
+
+        @Override
+        public void visitTableSwitchInsn(
+                int min, int max, Label defaultLabel, Label... labels) {
+            injectPendingIfAny();
+            super.visitTableSwitchInsn(min, max, defaultLabel, labels);
+        }
+
+        @Override
+        public void visitLookupSwitchInsn(
+                Label defaultLabel, int[] keys, Label[] labels) {
+            injectPendingIfAny();
+            super.visitLookupSwitchInsn(defaultLabel, keys, labels);
         }
     }
 
