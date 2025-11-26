@@ -9,21 +9,19 @@ import com.jaf.fuzzer.nautilus.min.Minimizer;
 import com.jaf.fuzzer.nautilus.mut.Mutators;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree.ConcatenationUnparser;
-import com.jaf.fuzzer.nautilus.util.TreeOps;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
+import java.util.Collections;
 
 /**
  * Core Nautilus fuzzer implementation. Closely follows the queue/scheduler defined in the plan:
@@ -108,7 +106,7 @@ public final class NautilusFuzzer {
     private void seed() {
         for (int i = 0; i < config.initialSeeds; i++) {
             DerivationTree tree = generator.generate(start, config.maxTreeSize);
-            maybeEnqueue(tree, Stage.INIT);
+            triageAndEnqueue(tree, Stage.INIT);
         }
     }
 
@@ -124,7 +122,7 @@ public final class NautilusFuzzer {
         DerivationTree current = item.tree;
         DerivationTree next;
         while ((next = rules.mutate(current, random)) != null) {
-            executeAndHandle(next);
+            triageAndEnqueue(next, Stage.INIT);
             current = next;
         }
         enqueue(new QueueItem(current, Stage.DET_AFL, item.newEdges));
@@ -138,7 +136,9 @@ public final class NautilusFuzzer {
             String source = unparser.unparse(item.tree.root, new HashMap<>());
             byte[] mutated = afl.mutateBytes(source.getBytes(StandardCharsets.UTF_8), random);
             ExecutionResult result = run(mutated);
-            if (consider(result)) {
+            Set<Integer> newEdges = new HashSet<>(result.edges);
+            newEdges.removeAll(globalEdges);
+            if (result.crashed || !newEdges.isEmpty()) {
                 globalEdges.addAll(result.edges);
                 List<DerivationTree.Node> leaves =
                         item.tree.root.preOrder().stream()
@@ -154,7 +154,7 @@ public final class NautilusFuzzer {
 
         DerivationTree recursive = new Mutators.RandomRecursiveMutation().mutate(item.tree, random);
         if (recursive != null) {
-            executeAndHandle(recursive);
+            triageAndEnqueue(recursive, Stage.INIT);
         }
         enqueue(new QueueItem(item.tree, Stage.RANDOM, item.newEdges));
     }
@@ -186,7 +186,7 @@ public final class NautilusFuzzer {
                             ? subtreeReplacement.mutate(current, random)
                             : splicing.mutate(current, random);
             if (mutated != null) {
-                executeAndHandle(mutated);
+                triageAndEnqueue(mutated, Stage.INIT);
                 current = mutated;
             } else if (reseedOnFailure && !corpus.isEmpty()) {
                 current = corpus.get(random.nextInt(corpus.size()));
@@ -194,15 +194,23 @@ public final class NautilusFuzzer {
         }
     }
 
-    private void executeAndHandle(DerivationTree tree) {
+    private void triageAndEnqueue(DerivationTree tree, Stage stage) {
         String input = unparser.unparse(tree.root, new HashMap<>());
-        ExecutionResult result = run(input.getBytes(StandardCharsets.UTF_8));
-        if (consider(result)) {
-            Set<Integer> newEdges = new HashSet<>(result.edges);
-            newEdges.removeAll(globalEdges);
-            globalEdges.addAll(result.edges);
-            enqueue(new QueueItem(tree, Stage.INIT, newEdges));
+        int hash = input.hashCode();
+        if (!seenHashes.add(hash)) {
+            return;
         }
+        ExecutionResult result = run(input.getBytes(StandardCharsets.UTF_8));
+        Set<Integer> newEdges = new HashSet<>(result.edges);
+        newEdges.removeAll(globalEdges);
+        if (!result.crashed && newEdges.isEmpty()) {
+            return;
+        }
+        globalEdges.addAll(result.edges);
+        if (!newEdges.isEmpty() && corpus.size() < config.maxCorpus) {
+            corpus.add(tree);
+        }
+        queue.addLast(new QueueItem(tree, stage, newEdges));
     }
 
     private ExecutionResult run(byte[] input) {
@@ -214,37 +222,7 @@ public final class NautilusFuzzer {
         }
     }
 
-    private boolean consider(ExecutionResult result) {
-        if (result.crashed) {
-            return true;
-        }
-        for (int edge : result.edges) {
-            if (!globalEdges.contains(edge)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void maybeEnqueue(DerivationTree tree, Stage stage) {
-        String input = unparser.unparse(tree.root, new HashMap<>());
-        int hash = input.hashCode();
-        if (!seenHashes.add(hash)) {
-            return;
-        }
-        ExecutionResult result = run(input.getBytes(StandardCharsets.UTF_8));
-        if (result.crashed || result.edges.stream().anyMatch(edge -> !globalEdges.contains(edge))) {
-            Set<Integer> newEdges = new HashSet<>(result.edges);
-            newEdges.removeAll(globalEdges);
-            globalEdges.addAll(result.edges);
-            enqueue(new QueueItem(tree, stage, newEdges));
-        }
-    }
-
     private void enqueue(QueueItem item) {
-        if (corpus.size() < config.maxCorpus) {
-            corpus.add(item.tree);
-        }
         queue.addLast(item);
     }
 }
