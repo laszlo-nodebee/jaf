@@ -15,6 +15,15 @@ import org.objectweb.asm.commons.AdviceAdapter;
 
 class EdgeCoverageTransformer implements ClassFileTransformer {
     private static final String COVERAGE_RUNTIME_INTERNAL = "com/jaf/agent/CoverageRuntime";
+    private final Set<String> allowedClasses;
+
+    EdgeCoverageTransformer() {
+        this(null);
+    }
+
+    EdgeCoverageTransformer(Set<String> allowedClasses) {
+        this.allowedClasses = allowedClasses == null ? null : new HashSet<>(allowedClasses);
+    }
 
     @Override
     public byte[] transform(
@@ -64,10 +73,13 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         if (className == null) {
             return false;
         }
-        if (className == "java/lang/ThreadLocal"
+        if ("java/lang/ThreadLocal".equals(className)
                 || className.startsWith("com/jaf/agent")
                 || className.startsWith("org/objectweb/asm")
                 || className.startsWith("java.lang.ThreadLocal")) {
+            return false;
+        }
+        if (allowedClasses != null && !allowedClasses.contains(className)) {
             return false;
         }
         return true;
@@ -82,6 +94,7 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         private Label pendingLabel;
         private int pendingEdgeId;
         private boolean pendingInjected;
+        private boolean injecting;
 
         EdgeCoverageAdviceAdapter(
                 MethodVisitor methodVisitor,
@@ -115,6 +128,10 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         }
 
         private void emitEdge(int edgeId) {
+            if (injecting) {
+                return;
+            }
+            injecting = true;
             visitLdcInsn(edgeId);
             visitMethodInsn(
                     Opcodes.INVOKESTATIC,
@@ -122,6 +139,7 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
                     "enterEdge",
                     "(I)V",
                     false);
+            injecting = false;
         }
 
         private int nextEdgeId() {
@@ -129,6 +147,9 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         }
 
         private void injectPendingIfAny() {
+            if (injecting) {
+                return;
+            }
             if (pendingLabel != null && !pendingInjected) {
                 emitEdge(pendingEdgeId);
                 pendingInjected = true;
