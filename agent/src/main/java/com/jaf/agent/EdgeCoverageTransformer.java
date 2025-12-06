@@ -158,13 +158,6 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
         }
 
         @Override
-        public void visitFrame(
-                int type, int numLocal, Object[] local, int numStack, Object[] stack) {
-            super.visitFrame(type, numLocal, local, numStack, stack);
-            injectPendingIfAny();
-        }
-
-        @Override
         public void visitInsn(int opcode) {
             injectPendingIfAny();
             super.visitInsn(opcode);
@@ -178,8 +171,14 @@ class EdgeCoverageTransformer implements ClassFileTransformer {
 
         @Override
         public void visitTypeInsn(int opcode, String type) {
-            injectPendingIfAny();
-            super.visitTypeInsn(opcode, type);
+            if (opcode == Opcodes.NEW) {
+		// Don't inject anything between a label and a NEW instruction, otherwise we'll get "bad offset for Uninitialized in method" errors
+                super.visitTypeInsn(opcode, type);
+                injectPendingIfAny();
+            } else {
+                injectPendingIfAny();
+                super.visitTypeInsn(opcode, type);
+            }
         }
 
         @Override
