@@ -79,6 +79,14 @@ public final class NautilusFuzzer {
         Instant deadline = Instant.now().plus(budget);
         while (Instant.now().isBefore(deadline)) {
             QueueItem item = queue.pollFirst();
+            if (item != null) {
+                debug(
+                        "Processing stage "
+                                + item.stage
+                                + " (queue size="
+                                + queue.size()
+                                + ")");
+            }
             if (item == null) {
                 if (corpus.isEmpty()) {
                     break;
@@ -198,6 +206,7 @@ public final class NautilusFuzzer {
         String input = unparser.unparse(tree.root, new HashMap<>());
         int hash = input.hashCode();
         if (!seenHashes.add(hash)) {
+            debug("input already checked, skipping");
             return;
         }
         ExecutionResult result = run(input.getBytes(StandardCharsets.UTF_8));
@@ -208,9 +217,16 @@ public final class NautilusFuzzer {
         }
         globalEdges.addAll(result.edges);
         if (!newEdges.isEmpty() && corpus.size() < config.maxCorpus) {
+            debug("new item added to corpus, corpus size: " + corpus.size());
             corpus.add(tree);
         }
         queue.addLast(new QueueItem(tree, stage, newEdges));
+        debug(
+                "Enqueued item for stage "
+                        + stage
+                        + " (queue size="
+                        + queue.size()
+                        + ")");
     }
 
     // Visible for testing.
@@ -222,6 +238,8 @@ public final class NautilusFuzzer {
         try {
             return executor.run(input);
         } catch (Exception e) {
+            System.err.println("[NautilusFuzzer] Executor threw exception: " + e);
+            e.printStackTrace(System.err);
             return new ExecutionResult(
                     true, Collections.emptySet(), e.getMessage() == null ? new byte[0] : e.getMessage().getBytes());
         }
@@ -229,5 +247,9 @@ public final class NautilusFuzzer {
 
     private void enqueue(QueueItem item) {
         queue.addLast(item);
+    }
+
+    private void debug(String message) {
+        System.out.println("[NautilusFuzzer] " + message);
     }
 }
