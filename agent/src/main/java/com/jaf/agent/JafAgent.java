@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -19,6 +20,7 @@ public class JafAgent {
     public static void premain(String agentArgs, Instrumentation inst) {
         logStartup(agentArgs);
         appendAgentJarToBootstrap(inst);
+        //ensureJavaBaseReadsHints(inst);
         startCoverageServer();
         waitForFuzzerConnection();
         installTransformer(inst);
@@ -39,6 +41,14 @@ public class JafAgent {
     private static volatile boolean bootstrapHelpersInstalled = false;
     private static volatile JarFile bootstrapHelperJar;
     private static Path bootstrapHelperJarPath;
+    private static volatile boolean javaBaseReadAdded = false;
+    private static final boolean DEBUG_ASM_ENABLED =
+            Boolean.getBoolean("jaf.debug.asm")
+                    || System.getProperty("jaf.debug.asm.class") != null;
+    private static final String DEBUG_ASM_TARGET_CLASS =
+            normalizeInternalName(System.getProperty("jaf.debug.asm.class"));
+    private static final Path DEBUG_ASM_OUTPUT_DIR =
+            Path.of(System.getProperty("jaf.debug.asm.dir", "/tmp/jaf-asm"));
 
     private static void installTransformer(Instrumentation inst) {
         appendAgentJarToBootstrap(inst);
@@ -106,13 +116,21 @@ public class JafAgent {
         MethodLoggingTransformer loggingTransformer = new MethodLoggingTransformer(targets);
         ServletRequestIdTransformer requestIdTransformer = new ServletRequestIdTransformer();
         EdgeCoverageTransformer coverageTransformer = new EdgeCoverageTransformer();
+        HintsTransformer hintsTransformer = new HintsTransformer();
         try {
             inst.addTransformer(coverageTransformer, true);
             inst.addTransformer(requestIdTransformer, true);
             inst.addTransformer(loggingTransformer, true);
+            inst.addTransformer(hintsTransformer, true);
+            if (DEBUG_ASM_ENABLED) {
+                inst.addTransformer(
+                        new DebugDumpingTransformer(DEBUG_ASM_OUTPUT_DIR, DEBUG_ASM_TARGET_CLASS),
+                        true);
+            }
             if (inst.isRetransformClassesSupported()) {
                 Set<String> targetNames = new HashSet<>(loggingTransformer.targetClasses());
                 targetNames.addAll(requestIdTransformer.targetClasses());
+                targetNames.addAll(hintsTransformer.targetClasses());
                 List<Class<?>> toRetransform = new ArrayList<>();
                 for (Class<?> loaded : inst.getAllLoadedClasses()) {
                     String internalName = loaded.getName().replace('.', '/');
@@ -129,6 +147,17 @@ public class JafAgent {
         } catch (Exception e) {
             System.err.println("Failed to install Runtime exec logging transformer: " + e);
         }
+    }
+
+    private static String normalizeInternalName(String maybeDotName) {
+        if (maybeDotName == null) {
+            return null;
+        }
+        String trimmed = maybeDotName.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed.replace('.', '/');
     }
 
     private static synchronized void startCoverageServer() {
@@ -181,7 +210,8 @@ public class JafAgent {
                     "com/jaf/agent/FuzzingRequestContext$RequestFinishedListener.class",
                     "com/jaf/agent/CoverageRuntime.class",
                     "com/jaf/agent/CoverageRuntime$TraceState.class",
-                    "com/jaf/agent/CoverageMaps.class"
+                    "com/jaf/agent/CoverageMaps.class",
+                    "com/jaf/agent/Hints.class"
                 };
                 Path tempJar =
                         Files.createTempFile("jaf-agent-bootstrap-", ".jar").toAbsolutePath();

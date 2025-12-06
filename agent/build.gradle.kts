@@ -3,6 +3,7 @@ import org.gradle.api.file.DuplicatesStrategy
 dependencies {
     implementation("org.ow2.asm:asm:9.9")
     implementation("org.ow2.asm:asm-commons:9.9")
+    implementation("org.ow2.asm:asm-util:9.9")
     implementation(project(":protocol"))
     implementation("io.grpc:grpc-netty-shaded:1.76.0")
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.2")
