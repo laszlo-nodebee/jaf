@@ -7,6 +7,7 @@ import com.jaf.fuzzer.nautilus.grammar.Grammar;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.NT;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.NonTerminal;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.Rule;
+import com.jaf.fuzzer.nautilus.min.Minimizer;
 import com.jaf.fuzzer.nautilus.mut.Mutators;
 import java.io.IOException;
 import java.net.URI;
@@ -42,6 +43,7 @@ public final class JafFuzzer {
         config.enableUniformGeneration = cli.enableUniformGeneration();
         TreeGenerators.setDebug(cli.debugGeneration());
         Mutators.setExpansionDebug(cli.debugExpansion());
+        Minimizer.setDebug(cli.debugMinimizer());
 
         Duration budget =
                 cli.durationSeconds() <= 0
@@ -121,6 +123,7 @@ public final class JafFuzzer {
         boolean debugGeneration = false;
         boolean debugExpansion = false;
         boolean enableUniformGeneration = true;
+        boolean debugMinimizer = false;
         if (args != null) {
             for (String arg : args) {
                 if (arg == null) {
@@ -132,6 +135,10 @@ public final class JafFuzzer {
                 }
                 if (arg.equals("--debug-expansion")) {
                     debugExpansion = true;
+                    continue;
+                }
+                if (arg.equals("--debug-minimizer")) {
+                    debugMinimizer = true;
                     continue;
                 }
                 if (arg.equals("--no-uniform")) {
@@ -158,6 +165,7 @@ public final class JafFuzzer {
                 target,
                 debugGeneration,
                 debugExpansion,
+                debugMinimizer,
                 enableUniformGeneration);
     }
 
@@ -241,5 +249,6 @@ public final class JafFuzzer {
             URI targetUri,
             boolean debugGeneration,
             boolean debugExpansion,
+            boolean debugMinimizer,
             boolean enableUniformGeneration) {}
 }

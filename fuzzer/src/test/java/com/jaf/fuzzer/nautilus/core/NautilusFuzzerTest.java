@@ -9,9 +9,7 @@ import com.jaf.fuzzer.nautilus.grammar.Grammar.NonTerminal;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.Rule;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.T;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree;
-import java.util.ArrayDeque;
-import java.util.HashSet;
-import java.util.Queue;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 final class NautilusFuzzerTest {
@@ -26,8 +24,6 @@ final class NautilusFuzzerTest {
         grammar.add(bRule);
 
         StubExecutor executor = new StubExecutor();
-        executor.enqueue(new ExecutionResult(false, Set.of(1), new byte[0]));
-        executor.enqueue(new ExecutionResult(false, Set.of(), new byte[0]));
 
         NautilusFuzzer.Config config = new NautilusFuzzer.Config();
         config.initialSeeds = 0;
@@ -38,29 +34,23 @@ final class NautilusFuzzerTest {
         DerivationTree treeA = new DerivationTree(new DerivationTree.Node(start, aRule));
         DerivationTree treeB = new DerivationTree(new DerivationTree.Node(start, bRule));
 
-        fuzzer.triageForTesting(treeA, NautilusFuzzer.Stage.INIT);
+        fuzzer.triageForTesting(treeA);
         assertEquals(1, fuzzer.corpus().size());
         assertTrue(fuzzer.coverage().contains(1));
 
-        fuzzer.triageForTesting(treeB, NautilusFuzzer.Stage.INIT);
+        fuzzer.triageForTesting(treeB);
         assertEquals(1, fuzzer.corpus().size(), "no new coverage should not grow corpus");
         assertEquals(1, fuzzer.coverage().size());
     }
 
     private static final class StubExecutor implements InstrumentedExecutor {
-        private final Queue<ExecutionResult> responses = new ArrayDeque<>();
-
-        void enqueue(ExecutionResult result) {
-            responses.add(result);
-        }
-
         @Override
         public ExecutionResult run(byte[] input) {
-            ExecutionResult result = responses.poll();
-            if (result == null) {
-                return new ExecutionResult(false, new HashSet<>(), new byte[0]);
+            String value = new String(input, StandardCharsets.UTF_8);
+            if ("a".equals(value)) {
+                return new ExecutionResult(false, Set.of(1), new byte[0]);
             }
-            return result;
+            return new ExecutionResult(false, Set.of(), new byte[0]);
         }
     }
 }

@@ -54,6 +54,24 @@ public final class DerivationTree {
             }
             return result;
         }
+
+        public List<Node> postOrder() {
+            List<Node> result = new ArrayList<>();
+            Deque<Node> stack = new ArrayDeque<>();
+            Deque<Node> reverse = new ArrayDeque<>();
+            stack.push(this);
+            while (!stack.isEmpty()) {
+                Node current = stack.pop();
+                reverse.push(current);
+                for (Node child : current.children) {
+                    stack.push(child);
+                }
+            }
+            while (!reverse.isEmpty()) {
+                result.add(reverse.pop());
+            }
+            return result;
+        }
     }
 
     public final Node root;

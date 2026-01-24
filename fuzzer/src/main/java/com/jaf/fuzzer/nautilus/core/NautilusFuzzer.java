@@ -25,12 +25,11 @@ import java.util.Collections;
 
 /**
  * Core Nautilus fuzzer implementation. Closely follows the queue/scheduler defined in the plan:
- * INIT → DET → DET_AFL → RANDOM.
+ * EXPANSION → DET → DET_AFL → RANDOM.
  */
 public final class NautilusFuzzer {
 
     public enum Stage {
-        INIT,
         EXPANSION,
         DET,
         DET_AFL,
@@ -81,12 +80,14 @@ public final class NautilusFuzzer {
         while (Instant.now().isBefore(deadline)) {
             QueueItem item = queue.pollFirst();
             if (item != null) {
+                String rendered = unparser.unparse(item.tree.root, new HashMap<>());
                 debug(
                         "Processing stage "
                                 + item.stage
                                 + " (queue size="
                                 + queue.size()
-                                + ")");
+                                + ") input="
+                                + rendered);
             }
             if (item == null) {
                 if (corpus.isEmpty()) {
@@ -96,7 +97,6 @@ public final class NautilusFuzzer {
                 break;
             }
             switch (item.stage) {
-                case INIT -> processInit(item);
                 case EXPANSION -> processExpansion(item);
                 case DET -> processDeterministic(item);
                 case DET_AFL -> processDetAfl(item);
@@ -116,14 +116,8 @@ public final class NautilusFuzzer {
     private void seed() {
         for (int i = 0; i < config.initialSeeds; i++) {
             DerivationTree tree = generator.generate(start, config.maxTreeSize);
-            triageAndEnqueue(tree, Stage.INIT);
+            triageAndEnqueue(tree);
         }
-    }
-
-    private void processInit(QueueItem item) {
-        Minimizer minimizer = new Minimizer(grammar, unparser, generator);
-        DerivationTree minimized = minimizer.run(item.tree, item.newEdges, executor);
-        enqueue(new QueueItem(minimized, Stage.EXPANSION, item.newEdges));
     }
 
     private void processExpansion(QueueItem item) {
@@ -132,7 +126,7 @@ public final class NautilusFuzzer {
         DerivationTree current = item.tree;
         DerivationTree next;
         while ((next = expansion.mutate(current, config.random)) != null) {
-            triageAndEnqueue(next, Stage.INIT);
+            triageAndEnqueue(next);
             current = next;
         }
         enqueue(new QueueItem(current, Stage.DET, item.newEdges));
@@ -144,7 +138,7 @@ public final class NautilusFuzzer {
         DerivationTree current = item.tree;
         DerivationTree next;
         while ((next = rules.mutate(current, random)) != null) {
-            triageAndEnqueue(next, Stage.INIT);
+            triageAndEnqueue(next);
             current = next;
         }
         enqueue(new QueueItem(current, Stage.DET_AFL, item.newEdges));
@@ -176,7 +170,7 @@ public final class NautilusFuzzer {
 
         DerivationTree recursive = new Mutators.RandomRecursiveMutation().mutate(item.tree, random);
         if (recursive != null) {
-            triageAndEnqueue(recursive, Stage.INIT);
+            triageAndEnqueue(recursive);
         }
         enqueue(new QueueItem(item.tree, Stage.RANDOM, item.newEdges));
     }
@@ -208,7 +202,7 @@ public final class NautilusFuzzer {
                             ? subtreeReplacement.mutate(current, random)
                             : splicing.mutate(current, random);
             if (mutated != null) {
-                triageAndEnqueue(mutated, Stage.INIT);
+                triageAndEnqueue(mutated);
                 current = mutated;
             } else if (reseedOnFailure && !corpus.isEmpty()) {
                 current = corpus.get(random.nextInt(corpus.size()));
@@ -216,7 +210,7 @@ public final class NautilusFuzzer {
         }
     }
 
-    private void triageAndEnqueue(DerivationTree tree, Stage stage) {
+    private void triageAndEnqueue(DerivationTree tree) {
         String input = unparser.unparse(tree.root, new HashMap<>());
         int hash = input.hashCode();
         if (!seenHashes.add(hash)) {
@@ -230,15 +224,21 @@ public final class NautilusFuzzer {
             return;
         }
         globalEdges.addAll(result.edges);
+        Minimizer minimizer = new Minimizer(grammar, unparser, generator);
+        DerivationTree minimized = minimizer.run(tree, newEdges, result.crashed, executor);
         if (!newEdges.isEmpty() && corpus.size() < config.maxCorpus) {
-            debug("new item added to corpus, corpus size: " + corpus.size());
-            corpus.add(tree);
+            corpus.add(minimized);
+            debug(
+                    "new item added to corpus, corpus size: "
+                            + corpus.size()
+                            + " corpus items="
+                            + renderCorpusItems());
         }
-        queue.addLast(new QueueItem(tree, stage, newEdges));
-        String rendered = unparser.unparse(tree.root, new HashMap<>());
+        queue.addLast(new QueueItem(minimized, Stage.EXPANSION, newEdges));
+        String rendered = unparser.unparse(minimized.root, new HashMap<>());
         debug(
                 "Enqueued item for stage "
-                        + stage
+                        + Stage.EXPANSION
                         + " (queue size="
                         + queue.size()
                         + ") input="
@@ -246,8 +246,8 @@ public final class NautilusFuzzer {
     }
 
     // Visible for testing.
-    void triageForTesting(DerivationTree tree, Stage stage) {
-        triageAndEnqueue(tree, stage);
+    void triageForTesting(DerivationTree tree) {
+        triageAndEnqueue(tree);
     }
 
     private ExecutionResult run(byte[] input) {
@@ -267,5 +267,12 @@ public final class NautilusFuzzer {
 
     private void debug(String message) {
         System.out.println("[NautilusFuzzer] " + message);
+    }
+
+    private String renderCorpusItems() {
+        return corpus.stream()
+                .map(item -> unparser.unparse(item.root, new HashMap<>()))
+                .toList()
+                .toString();
     }
 }
