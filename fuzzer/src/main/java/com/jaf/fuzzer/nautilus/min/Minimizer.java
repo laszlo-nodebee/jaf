@@ -1,5 +1,6 @@
 package com.jaf.fuzzer.nautilus.min;
 
+import com.jaf.fuzzer.nautilus.core.DeterminismChecker;
 import com.jaf.fuzzer.nautilus.exec.ExecutionResult;
 import com.jaf.fuzzer.nautilus.exec.InstrumentedExecutor;
 import com.jaf.fuzzer.nautilus.gen.TreeGenerators;
@@ -12,6 +13,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Objects;
 
 /**
  * Coverage-preserving minimization that performs subtree reduction followed by recursive
@@ -23,15 +25,18 @@ public final class Minimizer {
     private final Grammar grammar;
     private final DerivationTree.Unparser unparser;
     private final TreeGenerators.TreeGenerator generator;
+    private final DeterminismChecker determinismChecker;
     private final Map<Grammar.NonTerminal, DerivationTree.Node> minimalTrees;
 
     public Minimizer(
             Grammar grammar,
             DerivationTree.Unparser unparser,
-            TreeGenerators.TreeGenerator generator) {
-        this.grammar = grammar;
-        this.unparser = unparser;
-        this.generator = generator;
+            TreeGenerators.TreeGenerator generator,
+            DeterminismChecker determinismChecker) {
+        this.grammar = Objects.requireNonNull(grammar, "grammar");
+        this.unparser = Objects.requireNonNull(unparser, "unparser");
+        this.generator = Objects.requireNonNull(generator, "generator");
+        this.determinismChecker = Objects.requireNonNull(determinismChecker, "determinismChecker");
         this.minimalTrees = computeMinimalTrees(grammar);
     }
 
@@ -44,17 +49,18 @@ public final class Minimizer {
             Set<Integer> mustCover,
             boolean mustCrash,
             InstrumentedExecutor executor) {
-        if (mustCover.isEmpty()) {
+        Set<Integer> filteredMustCover = determinismChecker.filterKnownFlakyEdges(mustCover);
+        if (filteredMustCover.isEmpty()) {
             debug("Skipping minimization: empty mustCover");
             return tree;
         }
         debug(
                 "Starting minimization mustCover="
-                        + mustCover.size()
+                        + filteredMustCover.size()
                         + " mustCrash="
                         + mustCrash);
-        DerivationTree current = subtreeMinimize(tree, mustCover, mustCrash, executor);
-        DerivationTree minimized = recursiveMinimize(current, mustCover, mustCrash, executor);
+        DerivationTree current = subtreeMinimize(tree, filteredMustCover, mustCrash, executor);
+        DerivationTree minimized = recursiveMinimize(current, filteredMustCover, mustCrash, executor);
         debug("Finished minimization");
         return minimized;
     }
@@ -130,7 +136,8 @@ public final class Minimizer {
             if (mustCrash && !result.crashed) {
                 return false;
             }
-            return result.edges.containsAll(mustCover);
+            Set<Integer> edges = determinismChecker.filterKnownFlakyEdges(result.edges);
+            return edges.containsAll(mustCover);
         } catch (Exception ignored) {
             return false;
         }

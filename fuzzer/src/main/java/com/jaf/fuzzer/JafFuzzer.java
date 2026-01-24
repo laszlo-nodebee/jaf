@@ -1,6 +1,7 @@
 package com.jaf.fuzzer;
 
 import com.jaf.fuzzer.instrumentation.GrpcInstrumentedExecutor;
+import com.jaf.fuzzer.nautilus.core.DeterminismChecker;
 import com.jaf.fuzzer.nautilus.core.NautilusFuzzer;
 import com.jaf.fuzzer.nautilus.gen.TreeGenerators;
 import com.jaf.fuzzer.nautilus.grammar.Grammar;
@@ -44,6 +45,7 @@ public final class JafFuzzer {
         TreeGenerators.setDebug(cli.debugGeneration());
         Mutators.setExpansionDebug(cli.debugExpansion());
         Minimizer.setDebug(cli.debugMinimizer());
+        DeterminismChecker.setDebug(cli.debugDeterminism());
 
         Duration budget =
                 cli.durationSeconds() <= 0
@@ -124,6 +126,7 @@ public final class JafFuzzer {
         boolean debugExpansion = false;
         boolean enableUniformGeneration = true;
         boolean debugMinimizer = false;
+        boolean debugDeterminism = false;
         if (args != null) {
             for (String arg : args) {
                 if (arg == null) {
@@ -139,6 +142,10 @@ public final class JafFuzzer {
                 }
                 if (arg.equals("--debug-minimizer")) {
                     debugMinimizer = true;
+                    continue;
+                }
+                if (arg.equals("--debug-determinism")) {
+                    debugDeterminism = true;
                     continue;
                 }
                 if (arg.equals("--no-uniform")) {
@@ -166,6 +173,7 @@ public final class JafFuzzer {
                 debugGeneration,
                 debugExpansion,
                 debugMinimizer,
+                debugDeterminism,
                 enableUniformGeneration);
     }
 
@@ -250,5 +258,6 @@ public final class JafFuzzer {
             boolean debugGeneration,
             boolean debugExpansion,
             boolean debugMinimizer,
+            boolean debugDeterminism,
             boolean enableUniformGeneration) {}
 }

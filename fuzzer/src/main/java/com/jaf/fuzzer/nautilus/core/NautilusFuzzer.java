@@ -43,6 +43,7 @@ public final class NautilusFuzzer {
         public int maxTreeSize = 64;
         public Duration randomStageBudgetPerItem = Duration.ofSeconds(3);
         public int aflTrialsPerItem = 256;
+        public int determinismRuns = 3;
         public boolean enableUniformGeneration = true;
         public int maxCorpus = 10_000;
         public Random random = new Random();
@@ -54,6 +55,7 @@ public final class NautilusFuzzer {
     private final DerivationTree.Unparser unparser = new ConcatenationUnparser();
     private final TreeGenerator generator;
     private final Config config;
+    private final DeterminismChecker determinismChecker;
 
     private final Deque<QueueItem> queue = new ArrayDeque<>();
     private final List<DerivationTree> corpus = new ArrayList<>();
@@ -72,6 +74,7 @@ public final class NautilusFuzzer {
         } else {
             this.generator = new TreeGenerators.NaiveGenerator(grammar, config.random);
         }
+        this.determinismChecker = new DeterminismChecker(this::run, config.determinismRuns);
     }
 
     public void fuzz(Duration budget) {
@@ -152,10 +155,18 @@ public final class NautilusFuzzer {
             String source = unparser.unparse(item.tree.root, new HashMap<>());
             byte[] mutated = afl.mutateBytes(source.getBytes(StandardCharsets.UTF_8), random);
             ExecutionResult result = run(mutated);
-            Set<Integer> newEdges = new HashSet<>(result.edges);
+            Set<Integer> edges = determinismChecker.filterKnownFlakyEdges(result.edges);
+            Set<Integer> newEdges = new HashSet<>(edges);
             newEdges.removeAll(globalEdges);
+            if (!newEdges.isEmpty()) {
+                determinismChecker.recordFlakyEdges(mutated, edges);
+                globalEdges.retainAll(determinismChecker.filterKnownFlakyEdges(globalEdges));
+                edges = determinismChecker.filterKnownFlakyEdges(edges);
+                newEdges = new HashSet<>(edges);
+                newEdges.removeAll(globalEdges);
+            }
             if (result.crashed || !newEdges.isEmpty()) {
-                globalEdges.addAll(result.edges);
+                globalEdges.addAll(edges);
                 List<DerivationTree.Node> leaves =
                         item.tree.root.preOrder().stream()
                                 .filter(node -> node.children.isEmpty())
@@ -214,17 +225,23 @@ public final class NautilusFuzzer {
         String input = unparser.unparse(tree.root, new HashMap<>());
         int hash = input.hashCode();
         if (!seenHashes.add(hash)) {
-            debug("input" + input + " already executed, skipping");
+            debug("input: " + input + " already executed, skipping");
             return;
         }
-        ExecutionResult result = run(input.getBytes(StandardCharsets.UTF_8));
-        Set<Integer> newEdges = new HashSet<>(result.edges);
-        newEdges.removeAll(globalEdges);
+        byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
+        ExecutionResult result = run(inputBytes);
+        Set<Integer> edges = determinismChecker.filterKnownFlakyEdges(result.edges);
+        Set<Integer> newEdges = computeNewEdges(edges);
+        if (!newEdges.isEmpty()) {
+            determinismChecker.recordFlakyEdges(inputBytes, edges);
+            edges = refreshFilteredEdges(edges);
+            newEdges = computeNewEdges(edges);
+        }
         if (!result.crashed && newEdges.isEmpty()) {
             return;
         }
-        globalEdges.addAll(result.edges);
-        Minimizer minimizer = new Minimizer(grammar, unparser, generator);
+        globalEdges.addAll(edges);
+        Minimizer minimizer = new Minimizer(grammar, unparser, generator, determinismChecker);
         DerivationTree minimized = minimizer.run(tree, newEdges, result.crashed, executor);
         if (!newEdges.isEmpty() && corpus.size() < config.maxCorpus) {
             corpus.add(minimized);
@@ -234,7 +251,7 @@ public final class NautilusFuzzer {
                             + " corpus items="
                             + renderCorpusItems());
         }
-        queue.addLast(new QueueItem(minimized, Stage.EXPANSION, newEdges));
+        enqueue(new QueueItem(minimized, Stage.EXPANSION, newEdges));
         String rendered = unparser.unparse(minimized.root, new HashMap<>());
         debug(
                 "Enqueued item for stage "
@@ -259,6 +276,17 @@ public final class NautilusFuzzer {
             return new ExecutionResult(
                     true, Collections.emptySet(), e.getMessage() == null ? new byte[0] : e.getMessage().getBytes());
         }
+    }
+
+    private Set<Integer> computeNewEdges(Set<Integer> edges) {
+        Set<Integer> newEdges = new HashSet<>(edges);
+        newEdges.removeAll(globalEdges);
+        return newEdges;
+    }
+
+    private Set<Integer> refreshFilteredEdges(Set<Integer> edges) {
+        globalEdges.retainAll(determinismChecker.filterKnownFlakyEdges(globalEdges));
+        return determinismChecker.filterKnownFlakyEdges(edges);
     }
 
     private void enqueue(QueueItem item) {

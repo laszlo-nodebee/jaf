@@ -3,6 +3,7 @@ package com.jaf.fuzzer.nautilus.min;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.jaf.fuzzer.nautilus.core.DeterminismChecker;
 import com.jaf.fuzzer.nautilus.exec.ExecutionResult;
 import com.jaf.fuzzer.nautilus.exec.InstrumentedExecutor;
 import com.jaf.fuzzer.nautilus.gen.TreeGenerators;
@@ -40,7 +41,9 @@ final class MinimizerTest {
         DerivationTree.Unparser unparser = new DerivationTree.ConcatenationUnparser();
         InstrumentedExecutor executor = new CrashPreservingExecutor();
 
-        Minimizer minimizer = new Minimizer(grammar, unparser, generator);
+        DeterminismChecker checker =
+                new DeterminismChecker(input -> new ExecutionResult(false, Set.of(), new byte[0]), 1);
+        Minimizer minimizer = new Minimizer(grammar, unparser, generator, checker);
         DerivationTree minimized = minimizer.run(tree, Set.of(1), true, executor);
 
         String minimizedInput = unparser.unparse(minimized.root, Map.of());
@@ -67,7 +70,9 @@ final class MinimizerTest {
         DerivationTree.Unparser unparser = new DerivationTree.ConcatenationUnparser();
         InstrumentedExecutor executor = input -> new ExecutionResult(false, Set.of(1), new byte[0]);
 
-        Minimizer minimizer = new Minimizer(grammar, unparser, generator);
+        DeterminismChecker checker =
+                new DeterminismChecker(input -> new ExecutionResult(false, Set.of(), new byte[0]), 1);
+        Minimizer minimizer = new Minimizer(grammar, unparser, generator, checker);
         DerivationTree minimized = minimizer.run(tree, Set.of(1), false, executor);
 
         String minimizedInput = unparser.unparse(minimized.root, Map.of());
