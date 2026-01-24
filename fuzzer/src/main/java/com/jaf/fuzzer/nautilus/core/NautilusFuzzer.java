@@ -31,6 +31,7 @@ public final class NautilusFuzzer {
 
     public enum Stage {
         INIT,
+        EXPANSION,
         DET,
         DET_AFL,
         RANDOM
@@ -96,6 +97,7 @@ public final class NautilusFuzzer {
             }
             switch (item.stage) {
                 case INIT -> processInit(item);
+                case EXPANSION -> processExpansion(item);
                 case DET -> processDeterministic(item);
                 case DET_AFL -> processDetAfl(item);
                 case RANDOM -> processRandom(item, deadline);
@@ -121,7 +123,19 @@ public final class NautilusFuzzer {
     private void processInit(QueueItem item) {
         Minimizer minimizer = new Minimizer(grammar, unparser, generator);
         DerivationTree minimized = minimizer.run(item.tree, item.newEdges, executor);
-        enqueue(new QueueItem(minimized, Stage.DET, item.newEdges));
+        enqueue(new QueueItem(minimized, Stage.EXPANSION, item.newEdges));
+    }
+
+    private void processExpansion(QueueItem item) {
+        Mutators.ExpansionMutation expansion =
+                new Mutators.ExpansionMutation(grammar, generator, config.maxTreeSize, item.tree);
+        DerivationTree current = item.tree;
+        DerivationTree next;
+        while ((next = expansion.mutate(current, config.random)) != null) {
+            triageAndEnqueue(next, Stage.INIT);
+            current = next;
+        }
+        enqueue(new QueueItem(current, Stage.DET, item.newEdges));
     }
 
     private void processDeterministic(QueueItem item) {
@@ -206,7 +220,7 @@ public final class NautilusFuzzer {
         String input = unparser.unparse(tree.root, new HashMap<>());
         int hash = input.hashCode();
         if (!seenHashes.add(hash)) {
-            debug("input already checked, skipping");
+            debug("input" + input + " already executed, skipping");
             return;
         }
         ExecutionResult result = run(input.getBytes(StandardCharsets.UTF_8));
@@ -221,12 +235,14 @@ public final class NautilusFuzzer {
             corpus.add(tree);
         }
         queue.addLast(new QueueItem(tree, stage, newEdges));
+        String rendered = unparser.unparse(tree.root, new HashMap<>());
         debug(
                 "Enqueued item for stage "
                         + stage
                         + " (queue size="
                         + queue.size()
-                        + ")");
+                        + ") input="
+                        + rendered);
     }
 
     // Visible for testing.

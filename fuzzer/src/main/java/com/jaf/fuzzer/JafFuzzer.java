@@ -2,10 +2,12 @@ package com.jaf.fuzzer;
 
 import com.jaf.fuzzer.instrumentation.GrpcInstrumentedExecutor;
 import com.jaf.fuzzer.nautilus.core.NautilusFuzzer;
+import com.jaf.fuzzer.nautilus.gen.TreeGenerators;
 import com.jaf.fuzzer.nautilus.grammar.Grammar;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.NT;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.NonTerminal;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.Rule;
+import com.jaf.fuzzer.nautilus.mut.Mutators;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -20,7 +22,7 @@ import java.util.Random;
 public final class JafFuzzer {
 
     private static final String DEFAULT_SOCKET = "/tmp/jaf-coverage.sock";
-    private static final URI DEFAULT_TARGET = URI.create("http://127.0.0.1:8080/api/system/id");
+    private static final URI DEFAULT_TARGET = URI.create("http://127.0.0.1:8080/api/check-body");
     private static final int DEFAULT_DURATION_SECONDS = 30;
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration COVERAGE_TIMEOUT = Duration.ofSeconds(5);
@@ -33,10 +35,13 @@ public final class JafFuzzer {
 
         NautilusFuzzer.Config config = new NautilusFuzzer.Config();
         config.initialSeeds = 200;
-        config.maxTreeSize = 32;
+        config.maxTreeSize = 64;
         config.aflTrialsPerItem = 128;
         config.randomStageBudgetPerItem = Duration.ofSeconds(1);
         config.random = new Random();
+        config.enableUniformGeneration = cli.enableUniformGeneration();
+        TreeGenerators.setDebug(cli.debugGeneration());
+        Mutators.setExpansionDebug(cli.debugExpansion());
 
         Duration budget =
                 cli.durationSeconds() <= 0
@@ -113,9 +118,24 @@ public final class JafFuzzer {
         int duration = DEFAULT_DURATION_SECONDS;
         String socketPath = DEFAULT_SOCKET;
         URI target = DEFAULT_TARGET;
+        boolean debugGeneration = false;
+        boolean debugExpansion = false;
+        boolean enableUniformGeneration = true;
         if (args != null) {
             for (String arg : args) {
                 if (arg == null) {
+                    continue;
+                }
+                if (arg.equals("--debug-gen")) {
+                    debugGeneration = true;
+                    continue;
+                }
+                if (arg.equals("--debug-expansion")) {
+                    debugExpansion = true;
+                    continue;
+                }
+                if (arg.equals("--no-uniform")) {
+                    enableUniformGeneration = false;
                     continue;
                 }
                 if (arg.startsWith("--duration=")) {
@@ -132,7 +152,13 @@ public final class JafFuzzer {
                 }
             }
         }
-        return new CliConfig(duration, socketPath, target);
+        return new CliConfig(
+                duration,
+                socketPath,
+                target,
+                debugGeneration,
+                debugExpansion,
+                enableUniformGeneration);
     }
 
     static Grammar buildDefaultGrammar() {
@@ -197,5 +223,23 @@ public final class JafFuzzer {
         return grammar;
     }
 
-    static record CliConfig(int durationSeconds, String socketPath, URI targetUri) {}
+//    static Grammar buildDefaultGrammar() {
+//        NonTerminal START = new NonTerminal("START");
+//        Grammar grammar = new Grammar(START);
+//        grammar.add(new Rule(START, List.of(new Grammar.T("asdf"))));
+//        grammar.add(new Rule(START, List.of(new Grammar.T("fdsa"))));
+//        grammar.add(new Rule(START, List.of(new Grammar.T("demo-secret"))));
+//        grammar.add(new Rule(START, List.of(new Grammar.T("foo"))));
+//        grammar.add(new Rule(START, List.of(new Grammar.T("bar"))));
+//        return grammar;
+//    }
+
+
+    static record CliConfig(
+            int durationSeconds,
+            String socketPath,
+            URI targetUri,
+            boolean debugGeneration,
+            boolean debugExpansion,
+            boolean enableUniformGeneration) {}
 }

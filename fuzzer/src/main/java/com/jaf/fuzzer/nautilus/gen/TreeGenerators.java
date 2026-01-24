@@ -8,7 +8,9 @@ import com.jaf.fuzzer.nautilus.grammar.Grammar.Symbol;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -19,8 +21,19 @@ public final class TreeGenerators {
 
     private TreeGenerators() {}
 
+    private static volatile boolean debugEnabled = false;
+
+    public static void setDebug(boolean enabled) {
+        debugEnabled = enabled;
+    }
+
     public interface TreeGenerator {
         DerivationTree generate(NonTerminal start, int maxSize);
+
+        default DerivationTree generate(
+                NonTerminal start, int maxSize, Map<Rule, Integer> minExpansions) {
+            return generate(start, maxSize);
+        }
     }
 
     /** Picks productions uniformly at random without considering tree size. */
@@ -35,22 +48,52 @@ public final class TreeGenerators {
 
         @Override
         public DerivationTree generate(NonTerminal start, int maxSize) {
-            return new DerivationTree(expand(start, maxSize));
+            return new DerivationTree(expand(start, maxSize, new HashMap<>(), 0));
         }
 
-        private DerivationTree.Node expand(NonTerminal nt, int budget) {
+        @Override
+        public DerivationTree generate(
+                NonTerminal start, int maxSize, Map<Rule, Integer> minExpansions) {
+            Map<Rule, Integer> remaining = sanitizeMinExpansions(minExpansions);
+            return new DerivationTree(expand(start, maxSize, remaining, 0));
+        }
+
+        private DerivationTree.Node expand(
+                NonTerminal nt, int budget, Map<Rule, Integer> remaining, int depth) {
             List<Rule> rules = grammar.rules(nt);
-            Rule rule = rules.get(random.nextInt(Math.max(1, rules.size())));
+            Rule rule = chooseRule(rules, remaining, depth);
+            debug(depth, "choose " + rule);
             DerivationTree.Node node = new DerivationTree.Node(nt, rule);
+            decrementRemaining(remaining, rule);
             for (Symbol symbol : rule.rhs) {
                 if (symbol instanceof NT ntSymbol) {
                     if (budget <= 1) {
                         break;
                     }
-                    node.children.add(expand(ntSymbol.nt, budget - 1));
+                    node.children.add(expand(ntSymbol.nt, budget - 1, remaining, depth + 1));
                 }
             }
             return node;
+        }
+
+        private Rule chooseRule(List<Rule> rules, Map<Rule, Integer> remaining, int depth) {
+            List<Rule> preferred = new ArrayList<>();
+            for (Rule rule : rules) {
+                if (remaining.getOrDefault(rule, 0) > 0) {
+                    preferred.add(rule);
+                }
+            }
+            List<Rule> candidates = preferred.isEmpty() ? rules : preferred;
+            debug(depth, "options " + candidates);
+            return candidates.get(random.nextInt(Math.max(1, candidates.size())));
+        }
+
+        private void debug(int depth, String message) {
+            if (!debugEnabled) {
+                return;
+            }
+            String indent = "  ".repeat(Math.max(0, depth));
+            System.out.println("[Gen:Naive] " + indent + message);
         }
     }
 
@@ -73,7 +116,17 @@ public final class TreeGenerators {
         public DerivationTree generate(NonTerminal start, int maxSize) {
             int min = index.minSize.get(start);
             int size = sampleSize(start, min, Math.min(index.maxSize, maxSize));
-            DerivationTree.Node root = sampleNode(start, size);
+            DerivationTree.Node root = sampleNode(start, size, new HashMap<>(), 0);
+            return new DerivationTree(root);
+        }
+
+        @Override
+        public DerivationTree generate(
+                NonTerminal start, int maxSize, Map<Rule, Integer> minExpansions) {
+            int min = index.minSize.get(start);
+            int size = sampleSize(start, min, Math.min(index.maxSize, maxSize));
+            Map<Rule, Integer> remaining = sanitizeMinExpansions(minExpansions);
+            DerivationTree.Node root = sampleNode(start, size, remaining, 0);
             return new DerivationTree(root);
         }
 
@@ -100,18 +153,26 @@ public final class TreeGenerators {
             return Math.max(1, min);
         }
 
-        private DerivationTree.Node sampleNode(NonTerminal nt, int size) {
+        private DerivationTree.Node sampleNode(
+                NonTerminal nt, int size, Map<Rule, Integer> remaining, int depth) {
             int ntIndex = index.index.get(nt);
+            debug(depth, "sample " + nt + " size=" + size);
             BigInteger denominator = index.counts[ntIndex][size];
             if (denominator.equals(BigInteger.ZERO)) {
                 // Fallback to naive sampling when no combinatorial data is available.
                 List<Rule> rules = grammar.rules(nt);
-                Rule rule = rules.get(random.nextInt(Math.max(1, rules.size())));
+                Rule rule = chooseRule(rules, remaining, depth);
+                debug(depth, "choose " + rule);
                 DerivationTree.Node node = new DerivationTree.Node(nt, rule);
+                decrementRemaining(remaining, rule);
                 for (Symbol symbol : rule.rhs) {
                     if (symbol instanceof NT ntSymbol) {
                         node.children.add(
-                                sampleNode(ntSymbol.nt, Math.max(1, index.minSize.get(ntSymbol.nt))));
+                                sampleNode(
+                                        ntSymbol.nt,
+                                        Math.max(1, index.minSize.get(ntSymbol.nt)),
+                                        remaining,
+                                        depth + 1));
                     }
                 }
                 return node;
@@ -119,9 +180,28 @@ public final class TreeGenerators {
 
             Rule chosen = null;
             BigInteger cumulative = BigInteger.ZERO;
-            BigInteger pick = randomBelow(denominator);
+            boolean preferOnly = hasPreferredRules(grammar.rules(nt), size, remaining);
+            List<Rule> candidates = new ArrayList<>();
             for (Rule rule : grammar.rules(nt)) {
                 BigInteger weight = index.perRule.get(rule)[size];
+                if (weight.equals(BigInteger.ZERO)) {
+                    continue;
+                }
+                if (preferOnly && remaining.getOrDefault(rule, 0) <= 0) {
+                    continue;
+                }
+                candidates.add(rule);
+            }
+            debug(depth, "options " + candidates);
+            BigInteger pick = randomBelow(denominatorForSize(nt, size, remaining, preferOnly));
+            for (Rule rule : grammar.rules(nt)) {
+                BigInteger weight = index.perRule.get(rule)[size];
+                if (weight.equals(BigInteger.ZERO)) {
+                    continue;
+                }
+                if (preferOnly && remaining.getOrDefault(rule, 0) <= 0) {
+                    continue;
+                }
                 cumulative = cumulative.add(weight);
                 if (pick.compareTo(cumulative) < 0) {
                     chosen = rule;
@@ -132,7 +212,9 @@ public final class TreeGenerators {
                 chosen = grammar.rules(nt).get(0);
             }
 
+            debug(depth, "choose " + chosen);
             DerivationTree.Node node = new DerivationTree.Node(nt, chosen);
+            decrementRemaining(remaining, chosen);
             List<NonTerminal> children = new ArrayList<>();
             for (Symbol symbol : chosen.rhs) {
                 if (symbol instanceof NT ntSymbol) {
@@ -144,12 +226,12 @@ public final class TreeGenerators {
             }
 
             int base = children.stream().mapToInt(child -> index.minSize.get(child)).sum();
-            int remaining = size - 1 - base;
+            int remainingSize = size - 1 - base;
             List<int[]> options = new ArrayList<>();
             List<BigInteger> weights = new ArrayList<>();
             final BigInteger[] total = {BigInteger.ZERO};
             enumerateCompositions(
-                    remaining,
+                    remainingSize,
                     children.size(),
                     composition -> {
                         BigInteger product = BigInteger.ONE;
@@ -188,9 +270,17 @@ public final class TreeGenerators {
 
             for (int i = 0; i < children.size(); i++) {
                 int childSize = index.minSize.get(children.get(i)) + chosenComposition[i];
-                node.children.add(sampleNode(children.get(i), childSize));
+                node.children.add(sampleNode(children.get(i), childSize, remaining, depth + 1));
             }
             return node;
+        }
+
+        private void debug(int depth, String message) {
+            if (!debugEnabled) {
+                return;
+            }
+            String indent = "  ".repeat(Math.max(0, depth));
+            System.out.println("[Gen:Uniform] " + indent + message);
         }
 
         private BigInteger randomBelow(BigInteger bound) {
@@ -199,6 +289,47 @@ public final class TreeGenerators {
                 value = new BigInteger(bound.bitLength(), random);
             }
             return value;
+        }
+
+        private Rule chooseRule(List<Rule> rules, Map<Rule, Integer> remaining, int depth) {
+            List<Rule> preferred = new ArrayList<>();
+            for (Rule rule : rules) {
+                if (remaining.getOrDefault(rule, 0) > 0) {
+                    preferred.add(rule);
+                }
+            }
+            List<Rule> candidates = preferred.isEmpty() ? rules : preferred;
+            debug(depth, "options " + candidates);
+            return candidates.get(random.nextInt(Math.max(1, candidates.size())));
+        }
+
+        private boolean hasPreferredRules(
+                List<Rule> rules, int size, Map<Rule, Integer> remaining) {
+            for (Rule rule : rules) {
+                if (remaining.getOrDefault(rule, 0) > 0
+                        && !index.perRule.get(rule)[size].equals(BigInteger.ZERO)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private BigInteger denominatorForSize(
+                NonTerminal nt, int size, Map<Rule, Integer> remaining, boolean preferOnly) {
+            if (!preferOnly) {
+                return index.counts[index.index.get(nt)][size];
+            }
+            BigInteger total = BigInteger.ZERO;
+            for (Rule rule : grammar.rules(nt)) {
+                if (remaining.getOrDefault(rule, 0) <= 0) {
+                    continue;
+                }
+                BigInteger weight = index.perRule.get(rule)[size];
+                if (!weight.equals(BigInteger.ZERO)) {
+                    total = total.add(weight);
+                }
+            }
+            return total.equals(BigInteger.ZERO) ? index.counts[index.index.get(nt)][size] : total;
         }
 
         private interface CompositionConsumer {
@@ -222,6 +353,33 @@ public final class TreeGenerators {
                 array[position] = value;
                 enumerateRec(remainder - value, position + 1, array, consumer);
             }
+        }
+    }
+
+    private static Map<Rule, Integer> sanitizeMinExpansions(Map<Rule, Integer> minExpansions) {
+        Map<Rule, Integer> remaining = new HashMap<>();
+        if (minExpansions == null || minExpansions.isEmpty()) {
+            return remaining;
+        }
+        for (Map.Entry<Rule, Integer> entry : minExpansions.entrySet()) {
+            Integer value = entry.getValue();
+            int count = value == null ? 0 : value;
+            if (count > 0) {
+                remaining.put(entry.getKey(), count);
+            }
+        }
+        return remaining;
+    }
+
+    private static void decrementRemaining(Map<Rule, Integer> remaining, Rule rule) {
+        Integer count = remaining.get(rule);
+        if (count == null || count <= 0) {
+            return;
+        }
+        if (count == 1) {
+            remaining.remove(rule);
+        } else {
+            remaining.put(rule, count - 1);
         }
     }
 }
