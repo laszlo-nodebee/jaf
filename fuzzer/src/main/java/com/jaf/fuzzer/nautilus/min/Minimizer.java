@@ -1,5 +1,6 @@
 package com.jaf.fuzzer.nautilus.min;
 
+import com.jaf.fuzzer.coverage.CoverageBitmap;
 import com.jaf.fuzzer.nautilus.core.DeterminismChecker;
 import com.jaf.fuzzer.nautilus.exec.ExecutionResult;
 import com.jaf.fuzzer.nautilus.exec.InstrumentedExecutor;
@@ -46,17 +47,17 @@ public final class Minimizer {
 
     public DerivationTree run(
             DerivationTree tree,
-            Set<Integer> mustCover,
+            CoverageBitmap mustCover,
             boolean mustCrash,
             InstrumentedExecutor executor) {
-        Set<Integer> filteredMustCover = determinismChecker.filterKnownFlakyEdges(mustCover);
+        CoverageBitmap filteredMustCover = determinismChecker.filterKnownFlakyEdges(mustCover);
         if (filteredMustCover.isEmpty()) {
             debug("Skipping minimization: empty mustCover");
             return tree;
         }
         debug(
                 "Starting minimization mustCover="
-                        + filteredMustCover.size()
+                        + filteredMustCover.countNonZero()
                         + " mustCrash="
                         + mustCrash);
         DerivationTree current = subtreeMinimize(tree, filteredMustCover, mustCrash, executor);
@@ -67,7 +68,7 @@ public final class Minimizer {
 
     private DerivationTree subtreeMinimize(
             DerivationTree tree,
-            Set<Integer> mustCover,
+            CoverageBitmap mustCover,
             boolean mustCrash,
             InstrumentedExecutor executor) {
         boolean changed;
@@ -97,7 +98,7 @@ public final class Minimizer {
 
     private DerivationTree recursiveMinimize(
             DerivationTree tree,
-            Set<Integer> mustCover,
+            CoverageBitmap mustCover,
             boolean mustCrash,
             InstrumentedExecutor executor) {
         boolean changed;
@@ -127,7 +128,7 @@ public final class Minimizer {
 
     private boolean preservesCoverage(
             DerivationTree tree,
-            Set<Integer> mustCover,
+            CoverageBitmap mustCover,
             boolean mustCrash,
             InstrumentedExecutor executor) {
         try {
@@ -136,8 +137,8 @@ public final class Minimizer {
             if (mustCrash && !result.crashed) {
                 return false;
             }
-            Set<Integer> edges = determinismChecker.filterKnownFlakyEdges(result.edges);
-            return edges.containsAll(mustCover);
+            CoverageBitmap edges = determinismChecker.filterKnownFlakyEdges(result.edges);
+            return edges.covers(mustCover);
         } catch (Exception ignored) {
             return false;
         }

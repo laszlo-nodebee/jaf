@@ -3,6 +3,7 @@ package com.jaf.fuzzer.nautilus.min;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.jaf.fuzzer.coverage.CoverageBitmap;
 import com.jaf.fuzzer.nautilus.core.DeterminismChecker;
 import com.jaf.fuzzer.nautilus.exec.ExecutionResult;
 import com.jaf.fuzzer.nautilus.exec.InstrumentedExecutor;
@@ -16,7 +17,6 @@ import com.jaf.fuzzer.nautilus.tree.DerivationTree;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 final class MinimizerTest {
@@ -42,9 +42,11 @@ final class MinimizerTest {
         InstrumentedExecutor executor = new CrashPreservingExecutor();
 
         DeterminismChecker checker =
-                new DeterminismChecker(input -> new ExecutionResult(false, Set.of(), new byte[0]), 1);
+                new DeterminismChecker(
+                        input -> new ExecutionResult(false, CoverageBitmap.empty(), new byte[0]), 1);
         Minimizer minimizer = new Minimizer(grammar, unparser, generator, checker);
-        DerivationTree minimized = minimizer.run(tree, Set.of(1), true, executor);
+        DerivationTree minimized =
+                minimizer.run(tree, CoverageBitmap.fromIndices(1), true, executor);
 
         String minimizedInput = unparser.unparse(minimized.root, Map.of());
         assertEquals("CRASH", minimizedInput, "minimizer should keep crashing input");
@@ -68,12 +70,15 @@ final class MinimizerTest {
 
         TreeGenerators.TreeGenerator generator = (startSymbol, maxSize) -> tree;
         DerivationTree.Unparser unparser = new DerivationTree.ConcatenationUnparser();
-        InstrumentedExecutor executor = input -> new ExecutionResult(false, Set.of(1), new byte[0]);
+        InstrumentedExecutor executor =
+                input -> new ExecutionResult(false, CoverageBitmap.fromIndices(1), new byte[0]);
 
         DeterminismChecker checker =
-                new DeterminismChecker(input -> new ExecutionResult(false, Set.of(), new byte[0]), 1);
+                new DeterminismChecker(
+                        input -> new ExecutionResult(false, CoverageBitmap.empty(), new byte[0]), 1);
         Minimizer minimizer = new Minimizer(grammar, unparser, generator, checker);
-        DerivationTree minimized = minimizer.run(tree, Set.of(1), false, executor);
+        DerivationTree minimized =
+                minimizer.run(tree, CoverageBitmap.fromIndices(1), false, executor);
 
         String minimizedInput = unparser.unparse(minimized.root, Map.of());
         assertEquals("MIN", minimizedInput, "should replace with minimal subtree");
@@ -97,7 +102,7 @@ final class MinimizerTest {
         public ExecutionResult run(byte[] input) {
             String value = new String(input, StandardCharsets.UTF_8);
             boolean crashed = value.contains("CRASH");
-            return new ExecutionResult(crashed, Set.of(1), new byte[0]);
+            return new ExecutionResult(crashed, CoverageBitmap.fromIndices(1), new byte[0]);
         }
     }
 }

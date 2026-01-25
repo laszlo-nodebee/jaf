@@ -12,6 +12,7 @@ dependencies {
 }
 
 tasks.jar {
+    dependsOn(project(":protocol").tasks.named("jar"))
     archiveBaseName.set("jaf-agent")
     manifest {
         attributes(

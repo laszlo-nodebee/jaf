@@ -1,5 +1,6 @@
 package com.jaf.fuzzer.nautilus.core;
 
+import com.jaf.fuzzer.coverage.CoverageBitmap;
 import com.jaf.fuzzer.nautilus.exec.ExecutionResult;
 import com.jaf.fuzzer.nautilus.exec.InstrumentedExecutor;
 import com.jaf.fuzzer.nautilus.gen.TreeGenerators;
@@ -21,7 +22,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
-import java.util.Collections;
 
 /**
  * Core Nautilus fuzzer implementation. Closely follows the queue/scheduler defined in the plan:
@@ -36,7 +36,7 @@ public final class NautilusFuzzer {
         RANDOM
     }
 
-    public record QueueItem(DerivationTree tree, Stage stage, Set<Integer> newEdges) {}
+    public record QueueItem(DerivationTree tree, Stage stage, CoverageBitmap newEdges) {}
 
     public static final class Config {
         public int initialSeeds = 1000;
@@ -59,7 +59,7 @@ public final class NautilusFuzzer {
 
     private final Deque<QueueItem> queue = new ArrayDeque<>();
     private final List<DerivationTree> corpus = new ArrayList<>();
-    private final Set<Integer> globalEdges = new HashSet<>();
+    private CoverageBitmap globalEdges = CoverageBitmap.empty();
     private final Set<Integer> seenHashes = new HashSet<>();
 
     public NautilusFuzzer(
@@ -112,8 +112,12 @@ public final class NautilusFuzzer {
         return List.copyOf(corpus);
     }
 
-    public Set<Integer> coverage() {
-        return Set.copyOf(globalEdges);
+    public CoverageBitmap coverage() {
+        return globalEdges;
+    }
+
+    public int coverageCount() {
+        return globalEdges.countNonZero();
     }
 
     private void seed() {
@@ -155,18 +159,15 @@ public final class NautilusFuzzer {
             String source = unparser.unparse(item.tree.root, new HashMap<>());
             byte[] mutated = afl.mutateBytes(source.getBytes(StandardCharsets.UTF_8), random);
             ExecutionResult result = run(mutated);
-            Set<Integer> edges = determinismChecker.filterKnownFlakyEdges(result.edges);
-            Set<Integer> newEdges = new HashSet<>(edges);
-            newEdges.removeAll(globalEdges);
+            CoverageBitmap edges = determinismChecker.filterKnownFlakyEdges(result.edges);
+            CoverageBitmap newEdges = computeNewEdges(edges);
             if (!newEdges.isEmpty()) {
                 determinismChecker.recordFlakyEdges(mutated, edges);
-                globalEdges.retainAll(determinismChecker.filterKnownFlakyEdges(globalEdges));
-                edges = determinismChecker.filterKnownFlakyEdges(edges);
-                newEdges = new HashSet<>(edges);
-                newEdges.removeAll(globalEdges);
+                edges = refreshFilteredEdges(edges);
+                newEdges = computeNewEdges(edges);
             }
             if (result.crashed || !newEdges.isEmpty()) {
-                globalEdges.addAll(edges);
+                globalEdges = globalEdges.union(edges);
                 List<DerivationTree.Node> leaves =
                         item.tree.root.preOrder().stream()
                                 .filter(node -> node.children.isEmpty())
@@ -230,8 +231,8 @@ public final class NautilusFuzzer {
         }
         byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
         ExecutionResult result = run(inputBytes);
-        Set<Integer> edges = determinismChecker.filterKnownFlakyEdges(result.edges);
-        Set<Integer> newEdges = computeNewEdges(edges);
+        CoverageBitmap edges = determinismChecker.filterKnownFlakyEdges(result.edges);
+        CoverageBitmap newEdges = computeNewEdges(edges);
         if (!newEdges.isEmpty()) {
             determinismChecker.recordFlakyEdges(inputBytes, edges);
             edges = refreshFilteredEdges(edges);
@@ -240,7 +241,7 @@ public final class NautilusFuzzer {
         if (!result.crashed && newEdges.isEmpty()) {
             return;
         }
-        globalEdges.addAll(edges);
+        globalEdges = globalEdges.union(edges);
         Minimizer minimizer = new Minimizer(grammar, unparser, generator, determinismChecker);
         DerivationTree minimized = minimizer.run(tree, newEdges, result.crashed, executor);
         if (!newEdges.isEmpty() && corpus.size() < config.maxCorpus) {
@@ -274,18 +275,18 @@ public final class NautilusFuzzer {
             System.err.println("[NautilusFuzzer] Executor threw exception: " + e);
             e.printStackTrace(System.err);
             return new ExecutionResult(
-                    true, Collections.emptySet(), e.getMessage() == null ? new byte[0] : e.getMessage().getBytes());
+                    true,
+                    CoverageBitmap.empty(),
+                    e.getMessage() == null ? new byte[0] : e.getMessage().getBytes());
         }
     }
 
-    private Set<Integer> computeNewEdges(Set<Integer> edges) {
-        Set<Integer> newEdges = new HashSet<>(edges);
-        newEdges.removeAll(globalEdges);
-        return newEdges;
+    private CoverageBitmap computeNewEdges(CoverageBitmap edges) {
+        return edges.minus(globalEdges);
     }
 
-    private Set<Integer> refreshFilteredEdges(Set<Integer> edges) {
-        globalEdges.retainAll(determinismChecker.filterKnownFlakyEdges(globalEdges));
+    private CoverageBitmap refreshFilteredEdges(CoverageBitmap edges) {
+        globalEdges = determinismChecker.filterKnownFlakyEdges(globalEdges);
         return determinismChecker.filterKnownFlakyEdges(edges);
     }
 

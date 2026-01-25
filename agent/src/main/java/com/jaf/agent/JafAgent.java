@@ -210,7 +210,6 @@ public class JafAgent {
                     "com/jaf/agent/FuzzingRequestContext$RequestFinishedListener.class",
                     "com/jaf/agent/CoverageRuntime.class",
                     "com/jaf/agent/CoverageRuntime$TraceState.class",
-                    "com/jaf/agent/CoverageMaps.class",
                     "com/jaf/agent/Hints.class"
                 };
                 Path tempJar =

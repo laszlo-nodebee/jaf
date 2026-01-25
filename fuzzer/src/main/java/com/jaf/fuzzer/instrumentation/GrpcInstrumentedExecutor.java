@@ -1,5 +1,6 @@
 package com.jaf.fuzzer.instrumentation;
 
+import com.jaf.fuzzer.coverage.CoverageBitmap;
 import com.jaf.fuzzer.nautilus.exec.ExecutionResult;
 import com.jaf.fuzzer.nautilus.exec.InstrumentedExecutor;
 import com.jaf.proto.CoverageProto.CoverageEvent;
@@ -21,17 +22,14 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
@@ -50,10 +48,10 @@ public final class GrpcInstrumentedExecutor implements InstrumentedExecutor, Aut
     private final Duration requestTimeout;
     private final Duration coverageTimeout;
     private final Supplier<String> requestIdSupplier;
-    private final AtomicInteger edgeCounter;
     private final EventLoopGroup eventLoopGroup;
 
-    private final Map<String, CompletableFuture<Boolean>> pending = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<byte[]>> pending =
+            new ConcurrentHashMap<>();
 
     private volatile boolean shutdown;
 
@@ -65,7 +63,6 @@ public final class GrpcInstrumentedExecutor implements InstrumentedExecutor, Aut
             Duration requestTimeout,
             Duration coverageTimeout,
             Supplier<String> requestIdSupplier,
-            AtomicInteger edgeCounter,
             EventLoopGroup eventLoopGroup) {
         this.channel = channel;
         this.stub = stub != null ? stub : CoverageServiceGrpc.newStub(channel);
@@ -74,7 +71,6 @@ public final class GrpcInstrumentedExecutor implements InstrumentedExecutor, Aut
         this.requestTimeout = requestTimeout;
         this.coverageTimeout = coverageTimeout;
         this.requestIdSupplier = requestIdSupplier;
-        this.edgeCounter = edgeCounter;
         this.eventLoopGroup = eventLoopGroup;
         startSubscription();
     }
@@ -104,7 +100,6 @@ public final class GrpcInstrumentedExecutor implements InstrumentedExecutor, Aut
                 requestTimeout,
                 coverageTimeout,
                 () -> UUID.randomUUID().toString(),
-                new AtomicInteger(),
                 group);
     }
 
@@ -124,7 +119,6 @@ public final class GrpcInstrumentedExecutor implements InstrumentedExecutor, Aut
                 requestTimeout,
                 coverageTimeout,
                 requestIdSupplier,
-                new AtomicInteger(),
                 null);
     }
 
@@ -135,7 +129,7 @@ public final class GrpcInstrumentedExecutor implements InstrumentedExecutor, Aut
             throw new IllegalStateException("Executor has been shut down");
         }
         String requestId = requestIdSupplier.get();
-        CompletableFuture<Boolean> coverageFuture = new CompletableFuture<>();
+        CompletableFuture<byte[]> coverageFuture = new CompletableFuture<>();
         pending.put(requestId, coverageFuture);
 
         String requestBody = new String(input, StandardCharsets.UTF_8);
@@ -162,21 +156,18 @@ public final class GrpcInstrumentedExecutor implements InstrumentedExecutor, Aut
             throw e;
         }
 
-        boolean newCoverage = awaitCoverage(requestId, coverageFuture);
+        byte[] traceBitmap = awaitCoverage(requestId, coverageFuture);
         boolean crashed = response.statusCode() >= 500;
         byte[] stderr = response.body() != null ? response.body() : new byte[0];
-        Set<Integer> edges =
-                newCoverage
-                        ? Collections.singleton(edgeCounter.incrementAndGet())
-                        : Collections.emptySet();
+        CoverageBitmap edges = CoverageBitmap.fromBytes(traceBitmap);
         return new ExecutionResult(crashed, edges, stderr);
     }
 
     @Override
     public void close() {
         shutdown = true;
-        for (CompletableFuture<Boolean> future : pending.values()) {
-            future.complete(false);
+        for (CompletableFuture<byte[]> future : pending.values()) {
+            future.complete(new byte[0]);
         }
         pending.clear();
         channel.shutdownNow();
@@ -190,13 +181,14 @@ public final class GrpcInstrumentedExecutor implements InstrumentedExecutor, Aut
         }
     }
 
-    private boolean awaitCoverage(String requestId, CompletableFuture<Boolean> future)
+    private byte[] awaitCoverage(
+            String requestId, CompletableFuture<byte[]> future)
             throws Exception {
         try {
             return future.get(coverageTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             pending.remove(requestId, future);
-            return false;
+            return new byte[0];
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof Exception exception) {
@@ -215,15 +207,17 @@ public final class GrpcInstrumentedExecutor implements InstrumentedExecutor, Aut
                         if (requestId == null || requestId.isBlank()) {
                             return;
                         }
-                        CompletableFuture<Boolean> future = pending.remove(requestId);
+                        CompletableFuture<byte[]> future = pending.remove(requestId);
                         if (future != null) {
-                            future.complete(value.getHasNewCoverage());
+                            byte[] bitmap = value.getTraceBitmap().toByteArray();
+                            future.complete(bitmap);
                         }
                     }
 
                     @Override
                     public void onError(Throwable t) {
-                        for (Map.Entry<String, CompletableFuture<Boolean>> entry : pending.entrySet()) {
+                        for (Map.Entry<String, CompletableFuture<byte[]>> entry :
+                                pending.entrySet()) {
                             entry.getValue().completeExceptionally(t);
                         }
                         pending.clear();
@@ -259,4 +253,5 @@ public final class GrpcInstrumentedExecutor implements InstrumentedExecutor, Aut
             startSubscription();
         }
     }
+
 }

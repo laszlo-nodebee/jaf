@@ -65,7 +65,7 @@ public final class JafFuzzer {
                     "[JAF] Finished fuzzing. corpus="
                             + fuzzer.corpus().size()
                             + ", edges="
-                            + fuzzer.coverage().size());
+                            + fuzzer.coverageCount());
         }
     }
 
@@ -177,78 +177,78 @@ public final class JafFuzzer {
                 enableUniformGeneration);
     }
 
-    static Grammar buildDefaultGrammar() {
-        NonTerminal START = new NonTerminal("START");
-        NonTerminal OBJECT = new NonTerminal("OBJECT");
-        NonTerminal MEMBERS = new NonTerminal("MEMBERS");
-        NonTerminal PAIR = new NonTerminal("PAIR");
-        NonTerminal KEY = new NonTerminal("KEY");
-        NonTerminal VALUE = new NonTerminal("VALUE");
-        NonTerminal STRING = new NonTerminal("STRING");
-        NonTerminal STRING_BODY = new NonTerminal("STRING_BODY");
-        NonTerminal CHAR = new NonTerminal("CHAR");
-        NonTerminal LETTER = new NonTerminal("LETTER");
-        NonTerminal DIGIT = new NonTerminal("DIGIT");
-        NonTerminal NUMBER = new NonTerminal("NUMBER");
-        NonTerminal DIGITS = new NonTerminal("DIGITS");
-
-        Grammar grammar = new Grammar(START);
-
-        grammar.add(new Rule(START, List.of(new NT(OBJECT))));
-        grammar.add(new Rule(OBJECT, List.of(new Grammar.T("{"), new NT(MEMBERS), new Grammar.T("}"))));
-        grammar.add(new Rule(OBJECT, List.of(new Grammar.T("{"), new Grammar.T("}"))));
-        grammar.add(new Rule(MEMBERS, List.of(new NT(PAIR))));
-        grammar.add(new Rule(MEMBERS, List.of(new NT(PAIR), new Grammar.T(","), new NT(MEMBERS))));
-        grammar.add(new Rule(PAIR, List.of(new NT(KEY), new Grammar.T(":"), new NT(VALUE))));
-        grammar.add(new Rule(KEY, List.of(new NT(STRING))));
-        grammar.add(new Rule(VALUE, List.of(new NT(STRING))));
-        grammar.add(new Rule(VALUE, List.of(new NT(NUMBER))));
-
-        grammar.add(new Rule(STRING, List.of(new Grammar.T("\""), new NT(STRING_BODY), new Grammar.T("\""))));
-        grammar.add(new Rule(STRING_BODY, List.of()));
-        grammar.add(new Rule(STRING_BODY, List.of(new NT(CHAR), new NT(STRING_BODY))));
-        grammar.add(new Rule(CHAR, List.of(new NT(LETTER))));
-        grammar.add(new Rule(CHAR, List.of(new NT(DIGIT))));
-
-        grammar.add(new Rule(LETTER, List.of(new Grammar.T("a"))));
-        grammar.add(new Rule(LETTER, List.of(new Grammar.T("b"))));
-        grammar.add(new Rule(LETTER, List.of(new Grammar.T("c"))));
-        grammar.add(new Rule(LETTER, List.of(new Grammar.T("d"))));
-        grammar.add(new Rule(LETTER, List.of(new Grammar.T("e"))));
-        grammar.add(new Rule(LETTER, List.of(new Grammar.T("f"))));
-        grammar.add(new Rule(LETTER, List.of(new Grammar.T("g"))));
-        grammar.add(new Rule(LETTER, List.of(new Grammar.T("h"))));
-        grammar.add(new Rule(LETTER, List.of(new Grammar.T("i"))));
-        grammar.add(new Rule(LETTER, List.of(new Grammar.T("j"))));
-
-        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("0"))));
-        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("1"))));
-        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("2"))));
-        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("3"))));
-        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("4"))));
-        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("5"))));
-        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("6"))));
-        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("7"))));
-        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("8"))));
-        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("9"))));
-
-        grammar.add(new Rule(NUMBER, List.of(new NT(DIGITS))));
-        grammar.add(new Rule(DIGITS, List.of(new NT(DIGIT))));
-        grammar.add(new Rule(DIGITS, List.of(new NT(DIGIT), new NT(DIGITS))));
-
-        return grammar;
-    }
-
 //    static Grammar buildDefaultGrammar() {
 //        NonTerminal START = new NonTerminal("START");
+//        NonTerminal OBJECT = new NonTerminal("OBJECT");
+//        NonTerminal MEMBERS = new NonTerminal("MEMBERS");
+//        NonTerminal PAIR = new NonTerminal("PAIR");
+//        NonTerminal KEY = new NonTerminal("KEY");
+//        NonTerminal VALUE = new NonTerminal("VALUE");
+//        NonTerminal STRING = new NonTerminal("STRING");
+//        NonTerminal STRING_BODY = new NonTerminal("STRING_BODY");
+//        NonTerminal CHAR = new NonTerminal("CHAR");
+//        NonTerminal LETTER = new NonTerminal("LETTER");
+//        NonTerminal DIGIT = new NonTerminal("DIGIT");
+//        NonTerminal NUMBER = new NonTerminal("NUMBER");
+//        NonTerminal DIGITS = new NonTerminal("DIGITS");
+//
 //        Grammar grammar = new Grammar(START);
-//        grammar.add(new Rule(START, List.of(new Grammar.T("asdf"))));
-//        grammar.add(new Rule(START, List.of(new Grammar.T("fdsa"))));
-//        grammar.add(new Rule(START, List.of(new Grammar.T("demo-secret"))));
-//        grammar.add(new Rule(START, List.of(new Grammar.T("foo"))));
-//        grammar.add(new Rule(START, List.of(new Grammar.T("bar"))));
+//
+//        grammar.add(new Rule(START, List.of(new NT(OBJECT))));
+//        grammar.add(new Rule(OBJECT, List.of(new Grammar.T("{"), new NT(MEMBERS), new Grammar.T("}"))));
+//        grammar.add(new Rule(OBJECT, List.of(new Grammar.T("{"), new Grammar.T("}"))));
+//        grammar.add(new Rule(MEMBERS, List.of(new NT(PAIR))));
+//        grammar.add(new Rule(MEMBERS, List.of(new NT(PAIR), new Grammar.T(","), new NT(MEMBERS))));
+//        grammar.add(new Rule(PAIR, List.of(new NT(KEY), new Grammar.T(":"), new NT(VALUE))));
+//        grammar.add(new Rule(KEY, List.of(new NT(STRING))));
+//        grammar.add(new Rule(VALUE, List.of(new NT(STRING))));
+//        grammar.add(new Rule(VALUE, List.of(new NT(NUMBER))));
+//
+//        grammar.add(new Rule(STRING, List.of(new Grammar.T("\""), new NT(STRING_BODY), new Grammar.T("\""))));
+//        grammar.add(new Rule(STRING_BODY, List.of()));
+//        grammar.add(new Rule(STRING_BODY, List.of(new NT(CHAR), new NT(STRING_BODY))));
+//        grammar.add(new Rule(CHAR, List.of(new NT(LETTER))));
+//        grammar.add(new Rule(CHAR, List.of(new NT(DIGIT))));
+//
+//        grammar.add(new Rule(LETTER, List.of(new Grammar.T("a"))));
+//        grammar.add(new Rule(LETTER, List.of(new Grammar.T("b"))));
+//        grammar.add(new Rule(LETTER, List.of(new Grammar.T("c"))));
+//        grammar.add(new Rule(LETTER, List.of(new Grammar.T("d"))));
+//        grammar.add(new Rule(LETTER, List.of(new Grammar.T("e"))));
+//        grammar.add(new Rule(LETTER, List.of(new Grammar.T("f"))));
+//        grammar.add(new Rule(LETTER, List.of(new Grammar.T("g"))));
+//        grammar.add(new Rule(LETTER, List.of(new Grammar.T("h"))));
+//        grammar.add(new Rule(LETTER, List.of(new Grammar.T("i"))));
+//        grammar.add(new Rule(LETTER, List.of(new Grammar.T("j"))));
+//
+//        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("0"))));
+//        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("1"))));
+//        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("2"))));
+//        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("3"))));
+//        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("4"))));
+//        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("5"))));
+//        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("6"))));
+//        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("7"))));
+//        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("8"))));
+//        grammar.add(new Rule(DIGIT, List.of(new Grammar.T("9"))));
+//
+//        grammar.add(new Rule(NUMBER, List.of(new NT(DIGITS))));
+//        grammar.add(new Rule(DIGITS, List.of(new NT(DIGIT))));
+//        grammar.add(new Rule(DIGITS, List.of(new NT(DIGIT), new NT(DIGITS))));
+//
 //        return grammar;
 //    }
+
+    static Grammar buildDefaultGrammar() {
+        NonTerminal START = new NonTerminal("START");
+        Grammar grammar = new Grammar(START);
+        grammar.add(new Rule(START, List.of(new Grammar.T("asdf"))));
+        grammar.add(new Rule(START, List.of(new Grammar.T("fdsa"))));
+        grammar.add(new Rule(START, List.of(new Grammar.T("demo-secret"))));
+        grammar.add(new Rule(START, List.of(new Grammar.T("foo"))));
+        grammar.add(new Rule(START, List.of(new Grammar.T("bar"))));
+        return grammar;
+    }
 
 
     static record CliConfig(

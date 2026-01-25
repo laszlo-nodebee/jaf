@@ -75,7 +75,7 @@ public final class FuzzingRequestContext {
         RequestFinishedListener listener = requestFinishedListener;
         if (listener != null) {
             try {
-                listener.onRequestFinished(state.requestId, state.hasNewCoverage());
+                listener.onRequestFinished(state.requestId, state.traceBitmap());
             } catch (RuntimeException e) {
                 System.err.println("Request completion listener failed: " + e.getMessage());
             }
@@ -91,12 +91,7 @@ public final class FuzzingRequestContext {
             traceBitmap = CoverageRuntime.stopTracing();
         }
         state.clearTracing();
-        boolean hasNewCoverage = state.hasNewCoverage();
-        if (traceBitmap != null) {
-            hasNewCoverage = CoverageMaps.hasNewCoverage(traceBitmap);
-            CoverageMaps.mergeIntoGlobal(traceBitmap);
-        }
-        state.setCoverage(hasNewCoverage);
+        state.setTraceBitmap(traceBitmap);
     }
 
     private static boolean handleAsyncIfNeeded(Object request, RequestState state) {
@@ -294,7 +289,7 @@ public final class FuzzingRequestContext {
         private final AtomicBoolean completed = new AtomicBoolean(false);
         private final AtomicBoolean tracingStarted = new AtomicBoolean(false);
         private final AtomicBoolean coverageFinalized = new AtomicBoolean(false);
-        private volatile boolean hasNewCoverage;
+        private volatile byte[] traceBitmap;
 
         RequestState(String requestId) {
             this.requestId = requestId;
@@ -308,8 +303,8 @@ public final class FuzzingRequestContext {
             return tracingStarted.get();
         }
 
-        void setCoverage(boolean hasCoverage) {
-            hasNewCoverage = hasCoverage;
+        void setTraceBitmap(byte[] traceBitmap) {
+            this.traceBitmap = traceBitmap;
         }
 
         boolean beginCoverageFinalization() {
@@ -320,8 +315,8 @@ public final class FuzzingRequestContext {
             tracingStarted.set(false);
         }
 
-        boolean hasNewCoverage() {
-            return hasNewCoverage;
+        byte[] traceBitmap() {
+            return traceBitmap;
         }
 
         boolean markCompleted() {
@@ -331,6 +326,6 @@ public final class FuzzingRequestContext {
 
     @FunctionalInterface
     public interface RequestFinishedListener {
-        void onRequestFinished(String requestId, boolean hasNewCoverage);
+        void onRequestFinished(String requestId, byte[] traceBitmap);
     }
 }

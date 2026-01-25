@@ -2,6 +2,7 @@ package com.jaf.fuzzer.nautilus.core;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.jaf.fuzzer.coverage.CoverageBitmap;
 import com.jaf.fuzzer.nautilus.exec.ExecutionResult;
 import com.jaf.fuzzer.nautilus.exec.InstrumentedExecutor;
 import com.jaf.fuzzer.nautilus.grammar.Grammar;
@@ -10,7 +11,6 @@ import com.jaf.fuzzer.nautilus.grammar.Grammar.Rule;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.T;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree;
 import java.nio.charset.StandardCharsets;
-import java.util.Set;
 
 final class NautilusFuzzerTest {
 
@@ -36,11 +36,11 @@ final class NautilusFuzzerTest {
 
         fuzzer.triageForTesting(treeA);
         assertEquals(1, fuzzer.corpus().size());
-        assertTrue(fuzzer.coverage().contains(1));
+        assertTrue(fuzzer.coverage().covers(CoverageBitmap.fromIndices(1)));
 
         fuzzer.triageForTesting(treeB);
         assertEquals(1, fuzzer.corpus().size(), "no new coverage should not grow corpus");
-        assertEquals(1, fuzzer.coverage().size());
+        assertEquals(1, fuzzer.coverageCount());
     }
 
     private static final class StubExecutor implements InstrumentedExecutor {
@@ -48,9 +48,9 @@ final class NautilusFuzzerTest {
         public ExecutionResult run(byte[] input) {
             String value = new String(input, StandardCharsets.UTF_8);
             if ("a".equals(value)) {
-                return new ExecutionResult(false, Set.of(1), new byte[0]);
+                return new ExecutionResult(false, CoverageBitmap.fromIndices(1), new byte[0]);
             }
-            return new ExecutionResult(false, Set.of(), new byte[0]);
+            return new ExecutionResult(false, CoverageBitmap.empty(), new byte[0]);
         }
     }
 }

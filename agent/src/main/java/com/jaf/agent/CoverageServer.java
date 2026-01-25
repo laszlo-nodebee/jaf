@@ -1,5 +1,6 @@
 package com.jaf.agent;
 
+import com.google.protobuf.ByteString;
 import com.jaf.proto.CoverageProto.CoverageEvent;
 import com.jaf.proto.CoverageProto.SubscribeRequest;
 import com.jaf.proto.CoverageServiceGrpc;
@@ -119,11 +120,12 @@ final class CoverageServer {
         return firstClientLatch.await(timeout, unit);
     }
 
-    private void handleRequestFinished(String requestId, boolean hasNewCoverage) {
+    private void handleRequestFinished(String requestId, byte[] traceBitmap) {
+        byte[] payload = traceBitmap == null ? new byte[0] : traceBitmap;
         CoverageEvent event =
                 CoverageEvent.newBuilder()
                         .setRequestId(requestId != null ? requestId : "")
-                        .setHasNewCoverage(hasNewCoverage)
+                        .setTraceBitmap(ByteString.copyFrom(payload))
                         .build();
         for (StreamObserver<CoverageEvent> observer : observers) {
             observer.onNext(event);

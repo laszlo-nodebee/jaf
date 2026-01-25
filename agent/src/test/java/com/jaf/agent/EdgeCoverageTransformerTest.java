@@ -35,10 +35,9 @@ class EdgeCoverageTransformerTest {
         method.invoke(instance, 5);
         method.invoke(instance, -3);
         byte[] trace = CoverageRuntime.stopTracing();
-        CoverageMaps.mergeIntoGlobal(trace);
 
         assertTrue(
-                CoverageRuntime.nonZeroCount() >= 2,
+                countNonZero(trace) >= 2,
                 "Expected at least two coverage edges to be recorded");
     }
 
@@ -109,5 +108,18 @@ class EdgeCoverageTransformerTest {
             mv.visitMaxs(2, 2);
             mv.visitEnd();
         }
+    }
+
+    private static int countNonZero(byte[] bitmap) {
+        if (bitmap == null) {
+            return 0;
+        }
+        int count = 0;
+        for (byte value : bitmap) {
+            if (value != 0) {
+                count++;
+            }
+        }
+        return count;
     }
 }

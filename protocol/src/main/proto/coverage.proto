@@ -9,7 +9,9 @@ message SubscribeRequest {}
 
 message CoverageEvent {
   string request_id = 1;
-  bool has_new_coverage = 2;
+  bytes trace_bitmap = 3;
+  reserved 2;
+  reserved "has_new_coverage";
 }
 
 service CoverageService {

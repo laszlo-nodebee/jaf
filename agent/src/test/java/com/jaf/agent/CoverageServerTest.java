@@ -99,7 +99,8 @@ class CoverageServerTest {
         CoverageEvent event = observed.get();
         assertNotNull(event, "Expected coverage event payload");
         assertEquals("req-123", event.getRequestId());
-        assertTrue(event.getHasNewCoverage(), "Expected new coverage to be reported");
+        assertEquals(CoverageRuntime.MAP_SIZE, event.getTraceBitmap().size());
+        assertTrue(hasNonZeroByte(event.getTraceBitmap().toByteArray()));
 
         channel.shutdownNow();
         channel.awaitTermination(3, TimeUnit.SECONDS);
@@ -136,5 +137,17 @@ class CoverageServerTest {
         public boolean isAsyncStarted() {
             return false;
         }
+    }
+
+    private static boolean hasNonZeroByte(byte[] bitmap) {
+        if (bitmap == null) {
+            return false;
+        }
+        for (byte value : bitmap) {
+            if (value != 0) {
+                return true;
+            }
+        }
+        return false;
     }
 }
