@@ -14,11 +14,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.Set;
 
 /**
  * Grammar-aware mutators adapted from the Nautilus implementation plan. These operate on derivation
@@ -162,8 +160,6 @@ public final class Mutators {
      * original subtree intact while adding freshly generated siblings.
      */
     public static final class ExpansionMutation implements Mutator {
-        private static final int MIN_STRING_LENGTH = 4;
-
         private final Grammar grammar;
         private final TreeGenerators.TreeGenerator generator;
         private final int maxSize;
@@ -171,8 +167,6 @@ public final class Mutators {
         private final List<DerivationTree.Node> traversal;
         private final List<List<ExpansionOption>> options;
         private final int[] optionIndex;
-        private final Set<NonTerminal> stringLike;
-        private final Map<NonTerminal, Map<Rule, Integer>> stringLikePreferences;
         private int traversalIndex = 0;
 
         private static final class ExpansionOption {
@@ -195,9 +189,6 @@ public final class Mutators {
             this.maxSize = maxSize;
             this.original = tree;
             this.traversal = tree.root.preOrder();
-            this.stringLike = computeStringLikeNonTerminals(grammar);
-            this.stringLikePreferences =
-                    computeStringLikePreferences(grammar, stringLike, MIN_STRING_LENGTH);
             this.options = new ArrayList<>();
             this.optionIndex = new int[traversal.size()];
             for (DerivationTree.Node node : traversal) {
@@ -229,9 +220,6 @@ public final class Mutators {
         }
 
         private List<ExpansionOption> computeOptions(DerivationTree.Node node) {
-            if (stringLike.contains(node.nt)) {
-                return List.of();
-            }
             List<ExpansionOption> result = new ArrayList<>();
             for (Rule rule : grammar.rules(node.nt)) {
                 if (rule.rhs.size() <= 1) {
@@ -255,160 +243,12 @@ public final class Mutators {
                     if (nt.nt.equals(node.nt) && i == option.recursivePosition) {
                         wrapper.children.add(node);
                     } else {
-                        Map<Rule, Integer> preferences = stringLikePreferences.get(nt.nt);
-                        if (preferences == null || preferences.isEmpty()) {
-                            wrapper.children.add(generator.generate(nt.nt, maxSize).root);
-                        } else {
-                            wrapper.children.add(
-                                    generator.generate(nt.nt, maxSize, preferences).root);
-                        }
+                        wrapper.children.add(generator.generate(nt.nt, maxSize).root);
                     }
                 }
             }
             return wrapper;
         }
-    }
-
-    private static Set<NonTerminal> computeStringLikeNonTerminals(Grammar grammar) {
-        Set<NonTerminal> stringLike = new HashSet<>();
-        boolean changed;
-        do {
-            changed = false;
-            for (NonTerminal nt : grammar.nonTerminals()) {
-                if (stringLike.contains(nt)) {
-                    continue;
-                }
-                List<Rule> rules = grammar.rules(nt);
-                if (rules.isEmpty()) {
-                    continue;
-                }
-                boolean allRulesStringLike = true;
-                boolean hasTerminatingRule = false;
-                for (Rule rule : rules) {
-                    boolean ruleStringLike = true;
-                    boolean ruleTerminates = true;
-                    for (Symbol symbol : rule.rhs) {
-                        if (isStringTerminal(symbol)) {
-                            continue;
-                        }
-                        if (symbol instanceof NT ntSymbol) {
-                            if (!stringLike.contains(ntSymbol.nt) && !ntSymbol.nt.equals(nt)) {
-                                ruleStringLike = false;
-                            }
-                            if (!stringLike.contains(ntSymbol.nt)) {
-                                ruleTerminates = false;
-                            }
-                        } else {
-                            ruleStringLike = false;
-                            ruleTerminates = false;
-                        }
-                    }
-                    if (!ruleStringLike) {
-                        allRulesStringLike = false;
-                    }
-                    if (ruleStringLike && ruleTerminates) {
-                        hasTerminatingRule = true;
-                    }
-                }
-                if (allRulesStringLike && hasTerminatingRule && stringLike.add(nt)) {
-                    changed = true;
-                }
-            }
-        } while (changed);
-        return stringLike;
-    }
-
-    private static Map<NonTerminal, Map<Rule, Integer>> computeStringLikePreferences(
-            Grammar grammar, Set<NonTerminal> stringLike, int minStringLength) {
-        Map<NonTerminal, Integer> minLengths = computeMinStringAtomLength(grammar, stringLike);
-        Map<NonTerminal, Map<Rule, Integer>> preferences = new HashMap<>();
-        for (NonTerminal nt : stringLike) {
-            int minLength = minLengths.getOrDefault(nt, Integer.MAX_VALUE / 4);
-            int required = Math.max(0, minStringLength - minLength);
-            if (required <= 0) {
-                continue;
-            }
-            Rule recursiveRule = selectRecursiveRule(grammar, nt);
-            if (recursiveRule == null) {
-                continue;
-            }
-            preferences.put(nt, Map.of(recursiveRule, required));
-        }
-        return preferences;
-    }
-
-    private static Map<NonTerminal, Integer> computeMinStringAtomLength(
-            Grammar grammar, Set<NonTerminal> stringLike) {
-        Map<NonTerminal, Integer> minLength = new HashMap<>();
-        int infinity = Integer.MAX_VALUE / 4;
-        for (NonTerminal nt : stringLike) {
-            minLength.put(nt, infinity);
-        }
-        for (int iter = 0; iter < 64; iter++) {
-            boolean changed = false;
-            for (NonTerminal nt : stringLike) {
-                int current = minLength.get(nt);
-                for (Rule rule : grammar.rules(nt)) {
-                    int length = 0;
-                    boolean valid = true;
-                    for (Symbol symbol : rule.rhs) {
-                        if (isStringTerminal(symbol)) {
-                            length += 1;
-                        } else if (symbol instanceof NT ntSymbol) {
-                            if (!stringLike.contains(ntSymbol.nt)) {
-                                valid = false;
-                                break;
-                            }
-                            int childLength = minLength.getOrDefault(ntSymbol.nt, infinity);
-                            if (childLength >= infinity) {
-                                valid = false;
-                                break;
-                            }
-                            length += childLength;
-                        } else {
-                            valid = false;
-                            break;
-                        }
-                    }
-                    if (valid && length < current) {
-                        minLength.put(nt, length);
-                        current = length;
-                        changed = true;
-                    }
-                }
-            }
-            if (!changed) {
-                break;
-            }
-        }
-        return minLength;
-    }
-
-    private static Rule selectRecursiveRule(Grammar grammar, NonTerminal nt) {
-        Rule best = null;
-        int bestSize = Integer.MAX_VALUE;
-        for (Rule rule : grammar.rules(nt)) {
-            boolean recursive = false;
-            for (Symbol symbol : rule.rhs) {
-                if (symbol instanceof NT ntSymbol && ntSymbol.nt.equals(nt)) {
-                    recursive = true;
-                    break;
-                }
-            }
-            if (recursive && rule.rhs.size() < bestSize) {
-                best = rule;
-                bestSize = rule.rhs.size();
-            }
-        }
-        return best;
-    }
-
-    private static boolean isStringTerminal(Symbol symbol) {
-        if (symbol instanceof T terminal) {
-            String literal = terminal.literal;
-            return literal.length() == 1 && Character.isLetterOrDigit(literal.charAt(0));
-        }
-        return false;
     }
 
     /**
