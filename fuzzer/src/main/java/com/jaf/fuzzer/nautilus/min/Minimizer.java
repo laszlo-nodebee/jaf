@@ -62,6 +62,7 @@ public final class Minimizer {
                         + mustCrash);
         DerivationTree current = subtreeMinimize(tree, filteredMustCover, mustCrash, executor);
         DerivationTree minimized = recursiveMinimize(current, filteredMustCover, mustCrash, executor);
+        minimized = terminalMinimize(minimized, filteredMustCover, mustCrash, executor);
         debug("Finished minimization");
         return minimized;
     }
@@ -126,6 +127,92 @@ public final class Minimizer {
         return current;
     }
 
+    private DerivationTree terminalMinimize(
+            DerivationTree tree,
+            CoverageBitmap mustCover,
+            boolean mustCrash,
+            InstrumentedExecutor executor) {
+        boolean changed;
+        DerivationTree current = tree;
+        do {
+            changed = false;
+            List<DerivationTree.Node> nodes = current.root.preOrder();
+            for (DerivationTree.Node node : nodes) {
+                for (int i = 0; i < node.rhs.size(); i++) {
+                    Grammar.Symbol symbol = node.rhs.get(i);
+                    if (!(symbol instanceof Grammar.StringValue value)) {
+                        continue;
+                    }
+                    String minimized =
+                            minimizeStringValue(
+                                    value, mustCover, mustCrash, executor, current, node, i);
+                    if (minimized != null && !minimized.equals(value.value)) {
+                        DerivationTree candidate = replaceStringValue(current, node, i, value, minimized);
+                        current = candidate;
+                        changed = true;
+                        break;
+                    }
+                }
+                if (changed) {
+                    break;
+                }
+            }
+        } while (changed);
+        return current;
+    }
+
+    private String minimizeStringValue(
+            Grammar.StringValue value,
+            CoverageBitmap mustCover,
+            boolean mustCrash,
+            InstrumentedExecutor executor,
+            DerivationTree current,
+            DerivationTree.Node node,
+            int index) {
+        String minimal = value.terminal.minimalString();
+        if (!minimal.equals(value.value)) {
+            DerivationTree candidate = replaceStringValue(current, node, index, value, minimal);
+            if (preservesCoverage(candidate, mustCover, mustCrash, executor)) {
+                return minimal;
+            }
+        }
+        String truncated = value.value;
+        while (truncated.length() > value.terminal.minLength) {
+            truncated = truncated.substring(0, truncated.length() - 1);
+            DerivationTree candidate = replaceStringValue(current, node, index, value, truncated);
+            if (preservesCoverage(candidate, mustCover, mustCrash, executor)) {
+                return truncated;
+            }
+        }
+        char replacement = value.terminal.charset.first();
+        char[] chars = value.value.toCharArray();
+        for (int i = 0; i < chars.length; i++) {
+            if (chars[i] == replacement) {
+                continue;
+            }
+            chars[i] = replacement;
+            DerivationTree candidate =
+                    replaceStringValue(current, node, index, value, new String(chars));
+            if (preservesCoverage(candidate, mustCover, mustCrash, executor)) {
+                return new String(chars);
+            }
+            chars[i] = value.value.charAt(i);
+        }
+        return null;
+    }
+
+    private DerivationTree replaceStringValue(
+            DerivationTree tree,
+            DerivationTree.Node node,
+            int index,
+            Grammar.StringValue value,
+            String replacement) {
+        List<Grammar.Symbol> rhs = new java.util.ArrayList<>(node.rhs);
+        rhs.set(index, new Grammar.StringValue(value.terminal, replacement));
+        DerivationTree.Node replacementNode = node.copyWithRhs(rhs);
+        return TreeOps.replace(tree, node, replacementNode);
+    }
+
     private boolean preservesCoverage(
             DerivationTree tree,
             CoverageBitmap mustCover,
@@ -155,6 +242,9 @@ public final class Minimizer {
             return false;
         }
         if (left.rule != right.rule) {
+            return false;
+        }
+        if (!left.rhs.equals(right.rhs)) {
             return false;
         }
         if (left.children.size() != right.children.size()) {
@@ -217,8 +307,16 @@ public final class Minimizer {
         }
         DerivationTree.Node node = null;
         if (bestRule != null) {
-            node = new DerivationTree.Node(nt, bestRule);
+            List<Grammar.Symbol> rhs = new java.util.ArrayList<>(bestRule.rhs.size());
             for (Grammar.Symbol symbol : bestRule.rhs) {
+                if (symbol instanceof Grammar.StringTerminal terminal) {
+                    rhs.add(new Grammar.StringValue(terminal, terminal.minimalString()));
+                } else {
+                    rhs.add(symbol);
+                }
+            }
+            node = new DerivationTree.Node(nt, bestRule, rhs);
+            for (Grammar.Symbol symbol : rhs) {
                 if (symbol instanceof Grammar.NT ntSymbol) {
                     DerivationTree.Node child =
                             buildMinimalTree(grammar, minSizes, memo, visiting, ntSymbol.nt);

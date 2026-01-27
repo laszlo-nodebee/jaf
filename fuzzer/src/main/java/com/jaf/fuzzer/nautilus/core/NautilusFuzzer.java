@@ -206,13 +206,19 @@ public final class NautilusFuzzer {
                         () -> corpus.isEmpty()
                                 ? null
                                 : corpus.get(random.nextInt(corpus.size())));
+        var stringTerminalMutation = new Mutators.StringTerminalMutation();
 
         DerivationTree current = start;
         while (Instant.now().isBefore(deadline) && (stop == null || Instant.now().isBefore(stop))) {
-            DerivationTree mutated =
-                    random.nextBoolean()
-                            ? subtreeReplacement.mutate(current, random)
-                            : splicing.mutate(current, random);
+            DerivationTree mutated;
+            int pick = random.nextInt(10);
+            if (pick < 5) { // 50%
+                mutated = subtreeReplacement.mutate(current, random);
+            } else if (pick < 8) { // 30%
+                mutated = splicing.mutate(current, random);
+            } else { // 20%
+                mutated = stringTerminalMutation.mutate(current, random);
+            }
             if (mutated != null) {
                 triageAndEnqueue(mutated);
                 current = mutated;

@@ -7,6 +7,8 @@ import com.jaf.fuzzer.nautilus.grammar.Grammar.Rule;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.SemanticAction;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.Symbol;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.T;
+import com.jaf.fuzzer.nautilus.grammar.Grammar.StringTerminal;
+import com.jaf.fuzzer.nautilus.grammar.Grammar.StringValue;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -27,13 +29,25 @@ public final class DerivationTree {
         public final List<Symbol> rhs;
 
         public Node(NonTerminal nt, Rule rule) {
+            this(nt, rule, rule.rhs);
+        }
+
+        public Node(NonTerminal nt, Rule rule, List<Symbol> rhs) {
             this.nt = nt;
             this.rule = rule;
-            this.rhs = rule.rhs;
+            this.rhs = List.copyOf(rhs);
         }
 
         public Node deepCopy() {
-            Node copy = new Node(nt, rule);
+            Node copy = new Node(nt, rule, rhs);
+            for (Node child : children) {
+                copy.children.add(child.deepCopy());
+            }
+            return copy;
+        }
+
+        public Node copyWithRhs(List<Symbol> rhs) {
+            Node copy = new Node(nt, rule, rhs);
             for (Node child : children) {
                 copy.children.add(child.deepCopy());
             }
@@ -104,6 +118,10 @@ public final class DerivationTree {
                     sb.append(terminal.literal);
                 } else if (symbol instanceof NT) {
                     render(node.children.get(childIndex++), ctx, sb);
+                } else if (symbol instanceof StringValue value) {
+                    sb.append(value.value);
+                } else if (symbol instanceof StringTerminal terminal) {
+                    sb.append(terminal.minimalString());
                 } else if (symbol instanceof SemanticAction action) {
                     sb.append(action.render(ctx));
                 }

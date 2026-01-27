@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Random;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -43,6 +44,213 @@ public final class Grammar {
         @Override
         public String toString() {
             return "'" + literal + "'";
+        }
+    }
+
+    public static final class CharSet {
+        private final char[] chars;
+
+        private CharSet(char[] chars) {
+            if (chars == null || chars.length == 0) {
+                throw new IllegalArgumentException("charset must not be empty");
+            }
+            this.chars = chars.clone();
+        }
+
+        public static CharSet of(String chars) {
+            Objects.requireNonNull(chars, "chars");
+            return new CharSet(uniqueChars(chars));
+        }
+
+        public static CharSet range(char start, char endInclusive) {
+            if (endInclusive < start) {
+                throw new IllegalArgumentException("invalid range: " + start + "..." + endInclusive);
+            }
+            char[] range = new char[endInclusive - start + 1];
+            int index = 0;
+            for (char value = start; value <= endInclusive; value++) {
+                range[index++] = value;
+            }
+            return new CharSet(range);
+        }
+
+        public static CharSet union(CharSet... sets) {
+            Objects.requireNonNull(sets, "sets");
+            StringBuilder builder = new StringBuilder();
+            for (CharSet set : sets) {
+                if (set == null) {
+                    continue;
+                }
+                for (char value : set.chars) {
+                    builder.append(value);
+                }
+            }
+            return new CharSet(uniqueChars(builder.toString()));
+        }
+
+        public int size() {
+            return chars.length;
+        }
+
+        public char first() {
+            return chars[0];
+        }
+
+        public char pick(Random random) {
+            return chars[random.nextInt(chars.length)];
+        }
+
+        public boolean contains(char value) {
+            for (char c : chars) {
+                if (c == value) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder("CharSet(");
+            int limit = Math.min(chars.length, 16);
+            for (int i = 0; i < limit; i++) {
+                sb.append(chars[i]);
+            }
+            if (chars.length > limit) {
+                sb.append("...");
+            }
+            sb.append(")");
+            return sb.toString();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof CharSet other)) {
+                return false;
+            }
+            return Arrays.equals(chars, other.chars);
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(chars);
+        }
+
+        private static char[] uniqueChars(String chars) {
+            boolean[] seen = new boolean[Character.MAX_VALUE + 1];
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0; i < chars.length(); i++) {
+                char value = chars.charAt(i);
+                if (!seen[value]) {
+                    seen[value] = true;
+                    builder.append(value);
+                }
+            }
+            char[] result = new char[builder.length()];
+            builder.getChars(0, builder.length(), result, 0);
+            return result;
+        }
+    }
+
+    public static final class StringTerminal implements Symbol {
+        public final CharSet charset;
+        public final int minLength;
+        public final int maxLength;
+
+        public StringTerminal(CharSet charset, int minLength, int maxLength) {
+            this.charset = Objects.requireNonNull(charset, "charset");
+            if (minLength < 0) {
+                throw new IllegalArgumentException("minLength must be >= 0");
+            }
+            if (maxLength < minLength) {
+                throw new IllegalArgumentException("maxLength must be >= minLength");
+            }
+            this.minLength = minLength;
+            this.maxLength = maxLength;
+        }
+
+        public StringValue realize(Random random) {
+            return new StringValue(this, sample(random));
+        }
+
+        public String minimalString() {
+            if (minLength == 0) {
+                return "";
+            }
+            char value = charset.first();
+            StringBuilder sb = new StringBuilder(minLength);
+            for (int i = 0; i < minLength; i++) {
+                sb.append(value);
+            }
+            return sb.toString();
+        }
+
+        public String sample(Random random) {
+            int length = minLength == maxLength
+                    ? minLength
+                    : minLength + random.nextInt(maxLength - minLength + 1);
+            StringBuilder sb = new StringBuilder(length);
+            for (int i = 0; i < length; i++) {
+                sb.append(charset.pick(random));
+            }
+            return sb.toString();
+        }
+
+        @Override
+        public String toString() {
+            return "StringTerminal(" + charset + "," + minLength + ".." + maxLength + ")";
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof StringTerminal other)) {
+                return false;
+            }
+            return minLength == other.minLength
+                    && maxLength == other.maxLength
+                    && charset.equals(other.charset);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(charset, minLength, maxLength);
+        }
+    }
+
+    public static final class StringValue implements Symbol {
+        public final StringTerminal terminal;
+        public final String value;
+
+        public StringValue(StringTerminal terminal, String value) {
+            this.terminal = Objects.requireNonNull(terminal, "terminal");
+            this.value = Objects.requireNonNull(value, "value");
+        }
+
+        @Override
+        public String toString() {
+            return "'" + value + "'";
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof StringValue other)) {
+                return false;
+            }
+            return value.equals(other.value) && terminal.equals(other.terminal);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(terminal, value);
         }
     }
 
@@ -115,6 +323,20 @@ public final class Grammar {
 
     public List<Rule> allRules() {
         return byLhs.values().stream().flatMap(List::stream).toList();
+    }
+
+    public static List<Symbol> realizeRhs(List<Symbol> rhs, Random random) {
+        Objects.requireNonNull(rhs, "rhs");
+        Objects.requireNonNull(random, "random");
+        List<Symbol> realized = new ArrayList<>(rhs.size());
+        for (Symbol symbol : rhs) {
+            if (symbol instanceof StringTerminal terminal) {
+                realized.add(terminal.realize(random));
+            } else {
+                realized.add(symbol);
+            }
+        }
+        return List.copyOf(realized);
     }
 
     /**

@@ -7,6 +7,8 @@ import com.jaf.fuzzer.nautilus.grammar.Grammar;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.NT;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.NonTerminal;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.Rule;
+import com.jaf.fuzzer.nautilus.grammar.Grammar.StringTerminal;
+import com.jaf.fuzzer.nautilus.grammar.Grammar.StringValue;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.T;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree.ConcatenationUnparser;
@@ -153,53 +155,6 @@ final class MutatorsTest {
     }
 
     @Test
-    void expansionMutationGeneratesNonEmptyStringBodies() {
-        NonTerminal list = new NonTerminal("LIST");
-        NonTerminal string = new NonTerminal("STRING");
-        NonTerminal stringBody = new NonTerminal("STRING_BODY");
-        NonTerminal ch = new NonTerminal("CHAR");
-
-        Grammar grammar = new Grammar(list);
-        Rule listBase = new Rule(list, List.of(new NT(string)));
-        Rule listRecursive = new Rule(list, List.of(new NT(list), new T(","), new NT(string)));
-        Rule stringRule = new Rule(string, List.of(new T("\""), new NT(stringBody), new T("\"")));
-        Rule stringBodyEmpty = new Rule(stringBody, List.of());
-        Rule stringBodyRecursive = new Rule(stringBody, List.of(new NT(ch), new NT(stringBody)));
-        Rule charRule = new Rule(ch, List.of(new T("a")));
-
-        grammar.add(listBase);
-        grammar.add(listRecursive);
-        grammar.add(stringRule);
-        grammar.add(stringBodyEmpty);
-        grammar.add(stringBodyRecursive);
-        grammar.add(charRule);
-
-        DerivationTree.Node emptyBody = new DerivationTree.Node(stringBody, stringBodyEmpty);
-        DerivationTree.Node stringNode = new DerivationTree.Node(string, stringRule);
-        stringNode.children.add(emptyBody);
-        DerivationTree.Node listNode = new DerivationTree.Node(list, listBase);
-        listNode.children.add(stringNode);
-
-        TreeGenerators.TreeGenerator generator =
-                new TreeGenerators.NaiveGenerator(grammar, new Random(0));
-        DerivationTree baseTree = new DerivationTree(listNode);
-        Mutators.ExpansionMutation mutator =
-                new Mutators.ExpansionMutation(grammar, generator, /*maxSize*/ 8, baseTree);
-
-        DerivationTree mutated = mutator.mutate(baseTree, new Random(0));
-        assertNotNull(mutated);
-        String text = new ConcatenationUnparser().unparse(mutated.root, new java.util.HashMap<>());
-        var matcher = java.util.regex.Pattern.compile("\"(.*?)\"").matcher(text);
-        java.util.List<String> strings = new java.util.ArrayList<>();
-        while (matcher.find()) {
-            strings.add(matcher.group(1));
-        }
-        assertEquals(2, strings.size());
-        assertEquals("", strings.get(0));
-        assertTrue(strings.get(1).length() >= 1);
-    }
-
-    @Test
     void expansionMutationHandlesNestedStructures() {
         NonTerminal obj = new NonTerminal("OBJ");
         NonTerminal pairs = new NonTerminal("PAIRS");
@@ -308,29 +263,6 @@ final class MutatorsTest {
     }
 
     @Test
-    void expansionMutationSkipsStringLikeNonTerminals() {
-        NonTerminal stringBody = new NonTerminal("STRING_BODY");
-        NonTerminal ch = new NonTerminal("CHAR");
-        Grammar grammar = new Grammar(stringBody);
-        Rule empty = new Rule(stringBody, List.of());
-        Rule recursive = new Rule(stringBody, List.of(new NT(ch), new NT(stringBody)));
-        Rule a = new Rule(ch, List.of(new T("a")));
-        grammar.add(empty);
-        grammar.add(recursive);
-        grammar.add(a);
-
-        DerivationTree tree = new DerivationTree(new DerivationTree.Node(stringBody, empty));
-        Mutators.ExpansionMutation mutator =
-                new Mutators.ExpansionMutation(
-                        grammar,
-                        (nt, maxSize) -> new DerivationTree(new DerivationTree.Node(nt, a)),
-                        8,
-                        tree);
-
-        assertNull(mutator.mutate(tree, new Random(0)));
-    }
-
-    @Test
     void expansionMutationDoesNotSkipNonTerminatingRecursion() {
         NonTerminal loop = new NonTerminal("LOOP");
         Grammar grammar = new Grammar(loop);
@@ -346,6 +278,29 @@ final class MutatorsTest {
                         tree);
 
         assertNotNull(mutator.mutate(tree, new Random(0)));
+    }
+
+    @Test
+    void stringTerminalMutationEditsValueWithinBounds() {
+        NonTerminal start = new NonTerminal("S");
+        Grammar.CharSet charset = Grammar.CharSet.of("ab");
+        StringTerminal terminal = new StringTerminal(charset, 1, 3);
+        Grammar grammar = new Grammar(start);
+        Rule rule = new Rule(start, List.of(terminal));
+        grammar.add(rule);
+
+        List<Grammar.Symbol> rhs = List.of(new StringValue(terminal, "ab"));
+        DerivationTree tree = new DerivationTree(new DerivationTree.Node(start, rule, rhs));
+
+        Mutators.StringTerminalMutation mutator = new Mutators.StringTerminalMutation();
+        DerivationTree mutated = mutator.mutate(tree, new TestRandom(new int[] {0, 0, 2}));
+        assertNotNull(mutated);
+        String value =
+                new ConcatenationUnparser().unparse(mutated.root, new java.util.HashMap<>());
+        assertTrue(value.length() >= 1 && value.length() <= 3);
+        for (char c : value.toCharArray()) {
+            assertTrue(charset.contains(c));
+        }
     }
 
     @Test

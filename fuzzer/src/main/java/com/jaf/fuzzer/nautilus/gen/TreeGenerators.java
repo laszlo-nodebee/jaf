@@ -63,9 +63,10 @@ public final class TreeGenerators {
             List<Rule> rules = grammar.rules(nt);
             Rule rule = chooseRule(rules, remaining, depth);
             debug(depth, "choose " + rule);
-            DerivationTree.Node node = new DerivationTree.Node(nt, rule);
+            List<Symbol> rhs = Grammar.realizeRhs(rule.rhs, random);
+            DerivationTree.Node node = new DerivationTree.Node(nt, rule, rhs);
             decrementRemaining(remaining, rule);
-            for (Symbol symbol : rule.rhs) {
+            for (Symbol symbol : rhs) {
                 if (symbol instanceof NT ntSymbol) {
                     if (budget <= 1) {
                         break;
@@ -163,9 +164,10 @@ public final class TreeGenerators {
                 List<Rule> rules = grammar.rules(nt);
                 Rule rule = chooseRule(rules, remaining, depth);
                 debug(depth, "choose " + rule);
-                DerivationTree.Node node = new DerivationTree.Node(nt, rule);
+                List<Symbol> rhs = Grammar.realizeRhs(rule.rhs, random);
+                DerivationTree.Node node = new DerivationTree.Node(nt, rule, rhs);
                 decrementRemaining(remaining, rule);
-                for (Symbol symbol : rule.rhs) {
+                for (Symbol symbol : rhs) {
                     if (symbol instanceof NT ntSymbol) {
                         node.children.add(
                                 sampleNode(
@@ -213,10 +215,11 @@ public final class TreeGenerators {
             }
 
             debug(depth, "choose " + chosen);
-            DerivationTree.Node node = new DerivationTree.Node(nt, chosen);
+            List<Symbol> rhs = Grammar.realizeRhs(chosen.rhs, random);
+            DerivationTree.Node node = new DerivationTree.Node(nt, chosen, rhs);
             decrementRemaining(remaining, chosen);
             List<NonTerminal> children = new ArrayList<>();
-            for (Symbol symbol : chosen.rhs) {
+            for (Symbol symbol : rhs) {
                 if (symbol instanceof NT ntSymbol) {
                     children.add(ntSymbol.nt);
                 }

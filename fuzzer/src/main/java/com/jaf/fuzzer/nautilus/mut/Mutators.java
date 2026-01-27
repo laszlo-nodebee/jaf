@@ -7,15 +7,15 @@ import com.jaf.fuzzer.nautilus.grammar.Grammar.NonTerminal;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.Rule;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.Symbol;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.T;
+import com.jaf.fuzzer.nautilus.grammar.Grammar.StringTerminal;
+import com.jaf.fuzzer.nautilus.grammar.Grammar.StringValue;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree;
 import com.jaf.fuzzer.nautilus.util.TreeOps;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 
 /**
@@ -78,15 +78,18 @@ public final class Mutators {
                     if (rule == node.rule) {
                         continue;
                     }
-                    DerivationTree.Node replacement = new DerivationTree.Node(node.nt, rule);
+                    List<Symbol> rhs = Grammar.realizeRhs(rule.rhs, random);
+                    DerivationTree.Node replacement = new DerivationTree.Node(node.nt, rule, rhs);
                     for (Symbol symbol : rule.rhs) {
                         if (symbol instanceof NT ntSymbol) {
                             List<Rule> childRules = grammar.rules(ntSymbol.nt);
                             if (childRules.isEmpty()) {
                                 continue;
                             }
+                            Rule childRule = childRules.get(0);
+                            List<Symbol> childRhs = Grammar.realizeRhs(childRule.rhs, random);
                             replacement.children.add(
-                                    new DerivationTree.Node(ntSymbol.nt, childRules.get(0)));
+                                    new DerivationTree.Node(ntSymbol.nt, childRule, childRhs));
                         }
                     }
                     return TreeOps.replace(tree, node, replacement);
@@ -152,6 +155,104 @@ public final class Mutators {
                 }
             }
             return null;
+        }
+    }
+
+    /** Mutates string-terminal values by inserting, deleting, or flipping characters. */
+    public static final class StringTerminalMutation implements Mutator {
+        @Override
+        public DerivationTree mutate(DerivationTree tree, Random random) {
+            List<DerivationTree.Node> nodes = tree.root.preOrder();
+            List<DerivationTree.Node> candidates = new ArrayList<>();
+            for (DerivationTree.Node node : nodes) {
+                if (containsStringValue(node.rhs)) {
+                    candidates.add(node);
+                }
+            }
+            if (candidates.isEmpty()) {
+                return null;
+            }
+            DerivationTree.Node target = candidates.get(random.nextInt(candidates.size()));
+            int symbolIndex = selectStringSymbolIndex(target.rhs, random);
+            if (symbolIndex < 0) {
+                return null;
+            }
+            StringValue value = (StringValue) target.rhs.get(symbolIndex);
+            String mutated = mutateString(value, random);
+            if (mutated == null || mutated.equals(value.value)) {
+                return null;
+            }
+            List<Symbol> newRhs = new ArrayList<>(target.rhs);
+            newRhs.set(symbolIndex, new StringValue(value.terminal, mutated));
+            DerivationTree.Node replacement = target.copyWithRhs(newRhs);
+            return TreeOps.replace(tree, target, replacement);
+        }
+
+        private boolean containsStringValue(List<Symbol> rhs) {
+            for (Symbol symbol : rhs) {
+                if (symbol instanceof StringValue) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private int selectStringSymbolIndex(List<Symbol> rhs, Random random) {
+            List<Integer> indices = new ArrayList<>();
+            for (int i = 0; i < rhs.size(); i++) {
+                if (rhs.get(i) instanceof StringValue) {
+                    indices.add(i);
+                }
+            }
+            if (indices.isEmpty()) {
+                return -1;
+            }
+            return indices.get(random.nextInt(indices.size()));
+        }
+
+        private String mutateString(StringValue value, Random random) {
+            StringTerminal terminal = value.terminal;
+            String current = value.value;
+            int choice = random.nextInt(3);
+            return switch (choice) {
+                case 0 -> mutateReplaceChar(current, terminal, random);
+                case 1 -> mutateInsertChar(current, terminal, random);
+                default -> mutateDeleteChar(current, terminal);
+            };
+        }
+
+        private String mutateReplaceChar(String current, StringTerminal terminal, Random random) {
+            if (current.isEmpty()) {
+                return terminal.sample(random);
+            }
+            int index = random.nextInt(current.length());
+            char replacement = terminal.charset.pick(random);
+            if (current.charAt(index) == replacement && terminal.charset.size() > 1) {
+                replacement = terminal.charset.pick(random);
+            }
+            StringBuilder sb = new StringBuilder(current);
+            sb.setCharAt(index, replacement);
+            return sb.toString();
+        }
+
+        private String mutateInsertChar(String current, StringTerminal terminal, Random random) {
+            if (current.length() >= terminal.maxLength) {
+                return mutateReplaceChar(current, terminal, random);
+            }
+            int index = random.nextInt(current.length() + 1);
+            char value = terminal.charset.pick(random);
+            StringBuilder sb = new StringBuilder(current.length() + 1);
+            sb.append(current, 0, index);
+            sb.append(value);
+            sb.append(current.substring(index));
+            return sb.toString();
+        }
+
+        private String mutateDeleteChar(String current, StringTerminal terminal) {
+            if (current.length() <= terminal.minLength || current.isEmpty()) {
+                return terminal.minimalString();
+            }
+            return current.substring(0, current.length() - 1);
         }
     }
 

@@ -20,7 +20,7 @@ public final class TreeOps {
         if (current == oldSubtree) {
             return newSubtree.deepCopy();
         }
-        DerivationTree.Node node = new DerivationTree.Node(current.nt, current.rule);
+        DerivationTree.Node node = new DerivationTree.Node(current.nt, current.rule, current.rhs);
         for (DerivationTree.Node child : current.children) {
             node.children.add(replaceRec(child, oldSubtree, newSubtree));
         }
