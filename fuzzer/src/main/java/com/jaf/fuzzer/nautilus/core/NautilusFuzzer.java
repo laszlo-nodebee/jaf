@@ -250,6 +250,11 @@ public final class NautilusFuzzer {
         globalEdges = globalEdges.union(edges);
         Minimizer minimizer = new Minimizer(grammar, unparser, generator, determinismChecker);
         DerivationTree minimized = minimizer.run(tree, newEdges, result.crashed, executor);
+        String minimizedInput = unparser.unparse(minimized.root, new HashMap<>());
+        if (isInCorpus(minimizedInput)) {
+            debug("minimized input already in corpus, skipping enqueue");
+            return;
+        }
         if (!newEdges.isEmpty() && corpus.size() < config.maxCorpus) {
             corpus.add(minimized);
             debug(
@@ -259,7 +264,7 @@ public final class NautilusFuzzer {
                             + renderCorpusItems());
         }
         enqueue(new QueueItem(minimized, Stage.EXPANSION, newEdges));
-        String rendered = unparser.unparse(minimized.root, new HashMap<>());
+        String rendered = minimizedInput;
         debug(
                 "Enqueued item for stage "
                         + Stage.EXPANSION
@@ -309,5 +314,10 @@ public final class NautilusFuzzer {
                 .map(item -> unparser.unparse(item.root, new HashMap<>()))
                 .toList()
                 .toString();
+    }
+
+    private boolean isInCorpus(String input) {
+        return corpus.stream()
+                .anyMatch(item -> unparser.unparse(item.root, new HashMap<>()).equals(input));
     }
 }
