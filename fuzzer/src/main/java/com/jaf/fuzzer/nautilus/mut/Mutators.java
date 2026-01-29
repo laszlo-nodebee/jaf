@@ -59,11 +59,16 @@ public final class Mutators {
      */
     public static final class RulesMutation implements Mutator {
         private final Grammar grammar;
+        private final TreeGenerators.TreeGenerator generator;
+        private final int maxSize;
         private final List<DerivationTree.Node> traversal;
         private int index = 0;
 
-        public RulesMutation(Grammar grammar, DerivationTree tree) {
+        public RulesMutation(
+                Grammar grammar, TreeGenerators.TreeGenerator generator, int maxSize, DerivationTree tree) {
             this.grammar = grammar;
+            this.generator = generator;
+            this.maxSize = maxSize;
             this.traversal = tree.root.preOrder();
         }
 
@@ -80,14 +85,7 @@ public final class Mutators {
                     DerivationTree.Node replacement = new DerivationTree.Node(node.nt, rule, rhs);
                     for (Symbol symbol : rule.rhs) {
                         if (symbol instanceof NT ntSymbol) {
-                            List<Rule> childRules = grammar.rules(ntSymbol.nt);
-                            if (childRules.isEmpty()) {
-                                continue;
-                            }
-                            Rule childRule = childRules.get(0);
-                            List<Symbol> childRhs = Grammar.realizeRhs(childRule.rhs, random);
-                            replacement.children.add(
-                                    new DerivationTree.Node(ntSymbol.nt, childRule, childRhs));
+                            replacement.children.add(generator.generate(ntSymbol.nt, maxSize).root);
                         }
                     }
                     return TreeOps.replace(tree, node, replacement);

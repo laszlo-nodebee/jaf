@@ -137,7 +137,8 @@ public final class NautilusFuzzer {
     }
 
     private void processDeterministic(QueueItem item) {
-        Mutators.RulesMutation rules = new Mutators.RulesMutation(grammar, item.tree);
+        Mutators.RulesMutation rules =
+                new Mutators.RulesMutation(grammar, generator, config.maxTreeSize, item.tree);
         Random random = config.random;
         DerivationTree current = item.tree;
         DerivationTree next;

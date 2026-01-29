@@ -26,7 +26,8 @@ final class MutatorsTest {
         grammar.add(aRule);
 
         DerivationTree original = new DerivationTree(new DerivationTree.Node(start, aRule));
-        DerivationTree.Node replacementNode = new DerivationTree.Node(start, new Rule(start, List.of(new T("b"))));
+        DerivationTree.Node replacementNode =
+                new DerivationTree.Node(start, new Rule(start, List.of(new T("b"))));
         TreeGenerators.TreeGenerator generator =
                 (nt, maxSize) -> new DerivationTree(replacementNode.deepCopy());
 
@@ -48,7 +49,10 @@ final class MutatorsTest {
         grammar.add(b);
 
         DerivationTree tree = new DerivationTree(new DerivationTree.Node(start, a));
-        Mutators.RulesMutation mutator = new Mutators.RulesMutation(grammar, tree);
+        Rule fallbackRule = new Rule(start, List.of(new T("a")));
+        TreeGenerators.TreeGenerator generator =
+                (nt, maxSize) -> new DerivationTree(new DerivationTree.Node(nt, fallbackRule));
+        Mutators.RulesMutation mutator = new Mutators.RulesMutation(grammar, generator, 8, tree);
 
         DerivationTree first = mutator.mutate(tree, new Random(0));
         String text = new ConcatenationUnparser().unparse(first.root, new java.util.HashMap<>());
