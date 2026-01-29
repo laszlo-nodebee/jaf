@@ -25,14 +25,13 @@ import java.util.Set;
 
 /**
  * Core Nautilus fuzzer implementation. Closely follows the queue/scheduler defined in the plan:
- * EXPANSION → DET → DET_AFL → RANDOM.
+ * EXPANSION → DET → RANDOM.
  */
 public final class NautilusFuzzer {
 
     public enum Stage {
         EXPANSION,
         DET,
-        DET_AFL,
         RANDOM
     }
 
@@ -42,7 +41,6 @@ public final class NautilusFuzzer {
         public int initialSeeds = 1000;
         public int maxTreeSize = 64;
         public Duration randomStageBudgetPerItem = Duration.ofSeconds(3);
-        public int aflTrialsPerItem = 256;
         public int determinismRuns = 3;
         public boolean enableUniformGeneration = true;
         public int maxCorpus = 10_000;
@@ -87,7 +85,7 @@ public final class NautilusFuzzer {
                 debug(
                         "Processing stage "
                                 + item.stage
-                                + " (queue size="
+                                + " (queue size remaining="
                                 + queue.size()
                                 + ") input="
                                 + rendered);
@@ -102,7 +100,6 @@ public final class NautilusFuzzer {
             switch (item.stage) {
                 case EXPANSION -> processExpansion(item);
                 case DET -> processDeterministic(item);
-                case DET_AFL -> processDetAfl(item);
                 case RANDOM -> processRandom(item, deadline);
             }
         }
@@ -148,43 +145,7 @@ public final class NautilusFuzzer {
             triageAndEnqueue(next);
             current = next;
         }
-        enqueue(new QueueItem(current, Stage.DET_AFL, item.newEdges));
-    }
-
-    private void processDetAfl(QueueItem item) {
-        Mutators.AflStyleMutation afl = new Mutators.AflStyleMutation();
-        Random random = config.random;
-
-        for (int i = 0; i < config.aflTrialsPerItem; i++) {
-            String source = unparser.unparse(item.tree.root, new HashMap<>());
-            byte[] mutated = afl.mutateBytes(source.getBytes(StandardCharsets.UTF_8), random);
-            ExecutionResult result = run(mutated);
-            CoverageBitmap edges = determinismChecker.filterKnownFlakyEdges(result.edges);
-            CoverageBitmap newEdges = computeNewEdges(edges);
-            if (!newEdges.isEmpty()) {
-                determinismChecker.recordFlakyEdges(mutated, edges);
-                edges = refreshFilteredEdges(edges);
-                newEdges = computeNewEdges(edges);
-            }
-            if (result.crashed || !newEdges.isEmpty()) {
-                globalEdges = globalEdges.union(edges);
-                List<DerivationTree.Node> leaves =
-                        item.tree.root.preOrder().stream()
-                                .filter(node -> node.children.isEmpty())
-                                .toList();
-                if (!leaves.isEmpty()) {
-                    DerivationTree.Node leaf = leaves.get(random.nextInt(leaves.size()));
-                    Mutators.addCustomTerminalRule(
-                            grammar, leaf.nt, new String(mutated, StandardCharsets.UTF_8));
-                }
-            }
-        }
-
-        DerivationTree recursive = new Mutators.RandomRecursiveMutation().mutate(item.tree, random);
-        if (recursive != null) {
-            triageAndEnqueue(recursive);
-        }
-        enqueue(new QueueItem(item.tree, Stage.RANDOM, item.newEdges));
+        enqueue(new QueueItem(current, Stage.RANDOM, item.newEdges));
     }
 
     private void processRandom(QueueItem item, Instant deadline) {

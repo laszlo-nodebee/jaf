@@ -11,9 +11,7 @@ import com.jaf.fuzzer.nautilus.grammar.Grammar.StringTerminal;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.StringValue;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree;
 import com.jaf.fuzzer.nautilus.util.TreeOps;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
@@ -93,31 +91,6 @@ public final class Mutators {
                         }
                     }
                     return TreeOps.replace(tree, node, replacement);
-                }
-            }
-            return null;
-        }
-    }
-
-    /** Attempts to amplify recursive structures by duplicating recursively defined nodes. */
-    public static final class RandomRecursiveMutation implements Mutator {
-        @Override
-        public DerivationTree mutate(DerivationTree tree, Random random) {
-            List<DerivationTree.Node> nodes = tree.root.preOrder();
-            Collections.shuffle(nodes, random);
-            for (DerivationTree.Node node : nodes) {
-                for (DerivationTree.Node child : node.children) {
-                    if (child.nt.equals(node.nt)) {
-                        int repeats = 1 << (1 + random.nextInt(4));
-                        DerivationTree.Node current = node;
-                        for (int i = 0; i < repeats; i++) {
-                            DerivationTree.Node clone = current.deepCopy();
-                            DerivationTree.Node parent = new DerivationTree.Node(clone.nt, clone.rule);
-                            parent.children.add(clone);
-                            current = parent;
-                        }
-                        return TreeOps.replace(tree, node, current);
-                    }
                 }
             }
             return null;
@@ -300,6 +273,7 @@ public final class Mutators {
         @Override
         public DerivationTree mutate(DerivationTree tree, Random random) {
             while (traversalIndex < traversal.size()) {
+		System.out.println("ExpansionMutation.mutate(), iteration...");
                 List<ExpansionOption> candidates = options.get(traversalIndex);
                 if (optionIndex[traversalIndex] >= candidates.size()) {
                     traversalIndex++;
@@ -352,60 +326,4 @@ public final class Mutators {
         }
     }
 
-    /**
-     * Byte-level AFL-style mutation used in the deterministic AFL stage. Operates on the string
-     * representation of derivation subtrees.
-     */
-    public static final class AflStyleMutation {
-        private static final int[] INTERESTING = {-1, 0, 1, 16, 32, 64, 127, 128, 255, 256, 512, 1024, 4096};
-
-        public byte[] mutateBytes(byte[] input, Random random) {
-            byte[] copy = Arrays.copyOf(input, input.length);
-            switch (random.nextInt(3)) {
-                case 0 -> bitFlip(copy, random);
-                case 1 -> arithmetic(copy, random);
-                default -> interesting(copy, random);
-            }
-            return copy;
-        }
-
-        private void bitFlip(byte[] data, Random random) {
-            int flips = 1 + random.nextInt(Math.max(1, data.length));
-            for (int i = 0; i < flips; i++) {
-                int index = random.nextInt(data.length);
-                int bit = random.nextInt(8);
-                data[index] ^= (1 << bit);
-            }
-        }
-
-        private void arithmetic(byte[] data, Random random) {
-            if (data.length == 0) {
-                return;
-            }
-            int index = random.nextInt(data.length);
-            data[index] += (byte) (random.nextBoolean() ? 1 : -1);
-        }
-
-        private void interesting(byte[] data, Random random) {
-            String text = new String(data, StandardCharsets.UTF_8);
-            var matcher = java.util.regex.Pattern.compile("\\d+").matcher(text);
-            if (matcher.find()) {
-                int value = INTERESTING[random.nextInt(INTERESTING.length)];
-                String mutated =
-                        text.substring(0, matcher.start())
-                                + value
-                                + text.substring(matcher.end());
-                byte[] replacement = mutated.getBytes(StandardCharsets.UTF_8);
-                System.arraycopy(replacement, 0, data, 0, Math.min(data.length, replacement.length));
-            }
-        }
-    }
-
-    /** Adds a custom literal rule for a non-terminal to re-use mutated terminal strings. */
-    public static Grammar.Rule addCustomTerminalRule(
-            Grammar grammar, NonTerminal nonTerminal, String literal) {
-        Rule rule = new Rule(nonTerminal, List.of(new T(literal)), "custom", true);
-        grammar.add(rule);
-        return rule;
-    }
 }

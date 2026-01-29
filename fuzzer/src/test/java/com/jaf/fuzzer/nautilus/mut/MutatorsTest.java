@@ -12,7 +12,6 @@ import com.jaf.fuzzer.nautilus.grammar.Grammar.StringValue;
 import com.jaf.fuzzer.nautilus.grammar.Grammar.T;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree;
 import com.jaf.fuzzer.nautilus.tree.DerivationTree.ConcatenationUnparser;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
@@ -55,36 +54,6 @@ final class MutatorsTest {
         String text = new ConcatenationUnparser().unparse(first.root, new java.util.HashMap<>());
         assertEquals("b", text);
         assertNull(mutator.mutate(tree, new Random(0)), "exhausted traversal should return null");
-    }
-
-    @Test
-    void randomRecursiveMutationDuplicatesRecursiveChild() {
-        NonTerminal start = new NonTerminal("S");
-        Rule recursive = new Rule(start, List.of(new NT(start), new T("x")));
-        Rule base = new Rule(start, List.of(new T("x")));
-
-        Grammar grammar = new Grammar(start);
-        grammar.add(recursive);
-        grammar.add(base);
-
-        DerivationTree.Node child = new DerivationTree.Node(start, base);
-        DerivationTree.Node root = new DerivationTree.Node(start, recursive);
-        root.children.add(child);
-
-        Mutators.RandomRecursiveMutation mutator = new Mutators.RandomRecursiveMutation();
-        DerivationTree mutated = mutator.mutate(new DerivationTree(root), new Random(1));
-        assertNotNull(mutated);
-    }
-
-    @Test
-    void randomRecursiveMutationReturnsNullWhenNoRecursiveChild() {
-        NonTerminal start = new NonTerminal("S");
-        Grammar grammar = new Grammar(start);
-        Rule base = new Rule(start, List.of(new T("x")));
-        grammar.add(base);
-        DerivationTree tree = new DerivationTree(new DerivationTree.Node(start, base));
-        Mutators.RandomRecursiveMutation mutator = new Mutators.RandomRecursiveMutation();
-        assertNull(mutator.mutate(tree, new Random(0)));
     }
 
     @Test
@@ -301,18 +270,6 @@ final class MutatorsTest {
         for (char c : value.toCharArray()) {
             assertTrue(charset.contains(c));
         }
-    }
-
-    @Test
-    void aflStyleMutationPerformsRequestedStrategy() {
-        byte[] input = "value123".getBytes(StandardCharsets.UTF_8);
-        Mutators.AflStyleMutation mutator = new Mutators.AflStyleMutation();
-
-        // Force the "interesting" path and deterministic replacement.
-        TestRandom random = new TestRandom(new int[] {2, 0});
-        byte[] mutated = mutator.mutateBytes(input, random);
-        String mutatedText = new String(mutated, StandardCharsets.UTF_8);
-        assertTrue(mutatedText.contains("-1"), "should replace digits with selected interesting value");
     }
 
     private static final class TestRandom extends Random {

@@ -38,7 +38,6 @@ public final class JafFuzzer {
         NautilusFuzzer.Config config = new NautilusFuzzer.Config();
         config.initialSeeds = 200;
         config.maxTreeSize = 64;
-        config.aflTrialsPerItem = 128;
         config.randomStageBudgetPerItem = Duration.ofSeconds(1);
         config.random = new Random();
         config.enableUniformGeneration = cli.enableUniformGeneration();
